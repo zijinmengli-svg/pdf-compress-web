@@ -1,0 +1,13 @@
+{
+  "name": "pdf-compress-docs",
+  "version": "1.0.0",
+  "description": "PDF压缩神器 - 文档站点",
+  "scripts": {
+    "docs:dev": "vitepress dev",
+    "docs:build": "vitepress build",
+    "docs:preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "vitepress": "^1.0.0"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "pdf-compress-web",
+  "version": "1.0.0",
+  "description": "PDF压缩神器 - 想多大就多大！完全免费的PDF在线压缩工具",
+  "author": "PDF Compress Team",
+  "license": "MIT",
+  "main": "server-simple.js",
+  "scripts": {
+    "start": "node server-simple.js",
+    "dev": "node server-simple.js",
+    "docs:dev": "cd docs && npm run docs:dev",
+    "docs:build": "cd docs && npm run docs:build"
+  },
+  "keywords": [
+    "pdf",
+    "compression",
+    "compress",
+    "pdf-compress",
+    "webapp",
+    "macos"
+  ],
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "os": [
+    "darwin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zijinmengli-svg/pdf-compress-web.git"
+  },
+  "homepage": "https://zijinmengli-svg.github.io/pdf-compress-web/"
+}

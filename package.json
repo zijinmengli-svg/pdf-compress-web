@@ -1,0 +1,27 @@
+{
+  "name": "pdf-compress-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PDF压缩神器 - 一个功能完整的PDF在线压缩工具网站",
+  "author": "PDF Compress Team",
+  "license": "UNLICENSED",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "keywords": [
+    "pdf",
+    "compression",
+    "compress",
+    "pdf-compress",
+    "webapp"
+  ],
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "os": [
+    "darwin"
+  ]
+}

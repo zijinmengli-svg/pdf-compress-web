@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDF 压缩后台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell admin-shell">
+      <header class="topbar">
+        <span class="eyebrow">Admin Console</span>
+        <a class="admin-link" href="/">返回前台</a>
+      </header>
+
+      <section class="hero">
+        <h1>PDF 压缩网站后台</h1>
+        <p class="lead">管理收费开关、免费次数、套餐、收款方式、客服信息、统计数据和异常任务记录。</p>
+      </section>
+
+      <section class="panel" id="login-panel">
+        <h2>管理员登录</h2>
+        <form id="login-form" class="form compact-form">
+          <label class="field">
+            <span>账号</span>
+            <div class="inline-field"><input id="username" type="text" value="admin" /></div>
+          </label>
+          <label class="field">
+            <span>密码</span>
+            <div class="inline-field"><input id="password" type="password" value="admin123456" /></div>
+          </label>
+          <button type="submit">登录后台</button>
+        </form>
+      </section>
+
+      <section class="panel" id="dashboard-panel" hidden>
+        <div class="dashboard-header">
+          <h2>后台总览</h2>
+          <div class="action-row">
+            <button id="export-button" type="button">下载统计表</button>
+            <button id="logout-button" type="button" class="secondary-button">退出登录</button>
+          </div>
+        </div>
+
+        <dl class="metrics" id="summary-metrics"></dl>
+
+        <div class="grid-two">
+          <form id="settings-form" class="settings-form">
+            <h3>基础设置</h3>
+            <label class="field">
+              <span>站点名称</span>
+              <div class="inline-field"><input id="siteName" type="text" /></div>
+            </label>
+            <label class="field">
+              <span>后台账号</span>
+              <div class="inline-field"><input id="adminUsername" type="text" /></div>
+            </label>
+            <label class="field">
+              <span>重置后台密码</span>
+              <div class="inline-field"><input id="newPassword" type="password" placeholder="留空则不修改" /></div>
+            </label>
+            <label class="field">
+              <span>单文件最大支持（MB）</span>
+              <div class="inline-field"><input id="maxUploadMB" type="number" min="1" step="1" /></div>
+            </label>
+            <label class="field">
+              <span>文件保留时间（分钟）</span>
+              <div class="inline-field"><input id="cleanupMinutes" type="number" min="5" step="1" /></div>
+            </label>
+            <label class="field">
+              <span>压缩超时（秒）</span>
+              <div class="inline-field"><input id="compressionTimeoutSeconds" type="number" min="30" step="1" /></div>
+            </label>
+
+            <h3>免费次数与收费</h3>
+            <label class="toggle-line"><input id="freeUsageEnabled" type="checkbox" /><span>开启免费次数控制</span></label>
+            <label class="field">
+              <span>免费次数上限</span>
+              <div class="inline-field"><input id="freeUsageLimit" type="number" min="0" step="1" /></div>
+            </label>
+            <label class="field">
+              <span>免费次数统计规则</span>
+              <div class="inline-field">
+                <select id="freeUsageResetMode">
+                  <option value="daily">按日重置</option>
+                  <option value="lifetime">永久累计</option>
+                </select>
+              </div>
+            </label>
+            <label class="toggle-line"><input id="billingEnabled" type="checkbox" /><span>开启收费</span></label>
+
+            <h3>客服信息</h3>
+            <label class="field">
+              <span>客服邮箱</span>
+              <div class="inline-field"><input id="supportEmail" type="email" /></div>
+            </label>
+            <label class="field">
+              <span>客服说明</span>
+              <div class="textarea-field"><textarea id="supportMessage" rows="4"></textarea></div>
+            </label>
+
+            <button type="submit">保存后台配置</button>
+          </form>
+
+          <div class="table-card">
+            <div class="dashboard-header">
+              <h3>套餐配置</h3>
+              <button id="add-package" type="button" class="secondary-button">新增套餐</button>
+            </div>
+            <div id="package-editor" class="editor-list"></div>
+
+            <div class="dashboard-header">
+              <h3>收款账户配置</h3>
+              <button id="add-payment" type="button" class="secondary-button">新增收款方式</button>
+            </div>
+            <div id="payment-editor" class="editor-list"></div>
+          </div>
+        </div>
+
+        <section class="table-card">
+          <h3>访客数据</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>访客ID</th>
+                  <th>最近访问</th>
+                  <th>PV</th>
+                  <th>上传成功</th>
+                  <th>压缩发起</th>
+                  <th>压缩成功</th>
+                  <th>下载成功</th>
+                  <th>购买点击</th>
+                </tr>
+              </thead>
+              <tbody id="visitor-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="table-card">
+          <h3>最近事件</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>访客ID</th>
+                  <th>事件</th>
+                  <th>目标大小</th>
+                  <th>文件名</th>
+                  <th>备注</th>
+                </tr>
+              </thead>
+              <tbody id="event-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="table-card">
+          <h3>异常任务记录</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>类型</th>
+                  <th>任务ID</th>
+                  <th>文件名</th>
+                  <th>信息</th>
+                </tr>
+              </thead>
+              <tbody id="exception-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="table-card">
+          <h3>手动退费列表</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>申请时间</th>
+                  <th>状态</th>
+                  <th>联系邮箱</th>
+                  <th>退款账户</th>
+                  <th>套餐</th>
+                  <th>金额</th>
+                  <th>原因</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="refund-table"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+    <script src="/admin.js" defer></script>
+  </body>
+</html>

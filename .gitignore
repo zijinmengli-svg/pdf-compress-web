@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build output
+.build/
+
+# Data files (contains user data and settings)
+data/*.json
+!data/.gitkeep
+
+# Temp files
+*.tmp
+*.temp
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Skill package (optional)
+skill-package/

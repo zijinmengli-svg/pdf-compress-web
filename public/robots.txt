@@ -1,0 +1,6 @@
+# PDF压缩神器
+User-agent: *
+Allow: /
+Disallow: /admin
+
+Sitemap: /sitemap.xml

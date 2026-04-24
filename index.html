@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="PDF压缩神器 - 想多大就多大！一键压缩PDF文件到指定大小，保持清晰度，免费在线使用。" />
+    <meta name="keywords" content="PDF压缩,压缩PDF,PDF减小大小,PDF在线压缩,免费PDF压缩" />
+    <title>PDF压缩神器 - 想多大就多大 | 免费在线PDF压缩工具</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23c7512c'/%3E%3Cpath d='M18 18h16c7 0 12 5 12 12s-5 12-12 12H28v14H18V18zm10 9v14h6c4 0 7-3 7-7s-3-7-7-7h-6z' fill='white'/%3E%3C/svg%3E" />
+    <script>
+      !(function(t, e) {
+        var o, n, p, r;
+        e.__SV ||
+          ((window.posthog = e),
+          (e._i = []),
+          (e.init = function(i, s, a) {
+            function g(t, e) {
+              var o = e.split(".");
+              o.length == 2 && ((t = t[o[0]]), (e = o[1]));
+              t[e] = function() {
+                t.push([e].concat(Array.prototype.slice.call(arguments, 0)));
+              };
+            }
+            ((p = t.createElement("script")).type = "text/javascript"),
+              (p.async = !0),
+              (p.src = s.api_host.replace(".i.posthog.com", "-assets.i.posthog.com") + "/static/array.js"),
+              (r = t.getElementsByTagName("script")[0]).parentNode.insertBefore(p, r);
+            var u = e;
+            for (
+              void 0 !== a ? (u = e[a] = []) : (a = "posthog"),
+                u.people = u.people || [],
+                u.toString = function(t) {
+                  var e = "posthog";
+                  return "posthog" !== a && (e += "." + a), t || (e += " (stub)"), e;
+                },
+                u.people.toString = function() {
+                  return u.toString(1) + ".people (stub)";
+                },
+                o =
+                  "init capture register register_once register_for_session unregister unregister_for_session reset_config set_config set_person_properties set_person_properties_for_flags unset_person_properties identify setPersonProperties group identify_session alias people.set people.set_once people.unset people.increment people.append people.union people.track_charge people.clear_charges people.delete_user opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures onFeatureFlags onSessionId".split(
+                    " "
+                  ),
+                n = 0;
+              n < o.length;
+              n++
+            ) {
+              g(u, o[n]);
+            }
+            e._i.push([i, s, a]);
+          }),
+          (e.__SV = 1));
+      })(document, window.posthog || []);
+
+      posthog.init("phc_tC2njv2nDyPrZHRxhifu7my45dSMi5eVncDXA2jFHosp", {
+        api_host: "https://us.i.posthog.com",
+        capture_pageview: true,
+        capture_pageleave: true,
+        autocapture: true,
+        disable_session_recording: false
+      });
+    </script>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <span class="eyebrow">PDF Compression v1.0.0</span>
+      </header>
+
+      <section class="hero">
+        <h1>想多大就多大<br />PDF一键压缩神器</h1>
+        <p class="lead">
+          仅支持电脑网页版、单个 PDF 文件。全部压缩过程都在当前浏览器内完成，不上传服务器，适合直接分享网址给别人使用。
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="config-row" id="config-bar">
+          <span class="chip">单文件上限：250MB</span>
+          <span class="chip">完全免费</span>
+          <span class="chip">本地浏览器压缩</span>
+        </div>
+
+        <form id="compress-form" class="form" novalidate>
+          <label class="dropzone" id="dropzone" for="pdf">
+            <input id="pdf" name="pdf" type="file" accept="application/pdf" required />
+            <span class="drop-title">拖拽或点击上传 PDF</span>
+            <span class="drop-meta" id="file-meta">仅支持单个 .pdf 文件，建议不超过 250MB</span>
+          </label>
+
+          <p class="field-error" id="file-error" hidden></p>
+
+          <label class="field">
+            <span>目标大小</span>
+            <div class="inline-field">
+              <input id="targetMB" name="targetMB" type="number" min="0.1" step="0.1" placeholder="例如 20" required />
+              <span class="suffix">MB</span>
+            </div>
+          </label>
+
+          <p class="field-error" id="target-error" hidden></p>
+
+          <div class="action-row">
+            <button id="submit-button" type="submit">开始压缩</button>
+          </div>
+        </form>
+
+        <section class="status-card" id="status-card" hidden>
+          <div class="status-header">
+            <span id="status-title">准备中</span>
+            <span id="status-percent">0%</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="progress-fill"></div>
+          </div>
+          <p id="status-message">等待任务启动</p>
+          <dl class="metrics" id="metrics"></dl>
+          <div class="action-row" id="download-row" hidden>
+            <button id="download-button" type="button">下载压缩文件</button>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div>
+          <strong>提示：</strong>
+          纯前端版会把页面重新编码为图片型 PDF，适合快速分享使用。
+        </div>
+      </div>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="app-github.js" defer></script>
+  </body>
+</html>

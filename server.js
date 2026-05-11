@@ -11,6 +11,14 @@ const { URL } = require("url");
 
 const PORT = Number(process.env.PORT || 3487);
 
+// Validate required environment variables
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
+  throw new Error('SUPABASE_URL and SUPABASE_KEY environment variables must be set');
+}
+if (!process.env.RESEND_API_KEY) {
+  throw new Error('RESEND_API_KEY environment variable must be set');
+}
+
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY

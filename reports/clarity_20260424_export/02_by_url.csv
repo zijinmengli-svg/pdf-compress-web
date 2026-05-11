@@ -1,0 +1,12 @@
+metricName,sessionsCount,sessionsWithMetricPercentage,sessionsWithoutMetricPercentage,pagesViews,subTotal,Url,averageScrollDepth,totalSessionCount,totalBotSessionCount,distinctUserCount,pagesPerSessionPercentage,totalTime,activeTime
+DeadClickCount,8,25,75,2,9,https://zijinmengli-svg.github.io/pdf-compress-web/,,,,,,,
+ExcessiveScroll,8,0,100,0,0,https://zijinmengli-svg.github.io/pdf-compress-web/,,,,,,,
+RageClickCount,8,0,100,0,0,https://zijinmengli-svg.github.io/pdf-compress-web/,,,,,,,
+QuickbackClick,8,0,100,0,0,https://zijinmengli-svg.github.io/pdf-compress-web/,,,,,,,
+ScriptErrorCount,8,0,100,0,0,https://zijinmengli-svg.github.io/pdf-compress-web/,,,,,,,
+ErrorClickCount,8,0,100,0,0,https://zijinmengli-svg.github.io/pdf-compress-web/,,,,,,,
+ScrollDepth,,,,,,https://zijinmengli-svg.github.io/pdf-compress-web/,87.3,,,,,,
+Traffic,,,,,,,,0,0,1,1,,
+Traffic,,,,,,https://zijinmengli-svg.github.io/pdf-compress-web/,,8,4,4,1.5,,
+Traffic,,,,,,https://zijinmengli-svg.github.io/pdf-compress-web/?claritycheck=1,,0,1,1,1,,
+EngagementTime,,,,,,https://zijinmengli-svg.github.io/pdf-compress-web/,,,,,,450,224

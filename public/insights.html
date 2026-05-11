@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDF 压缩数据页</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell admin-shell">
+      <header class="topbar">
+        <span class="eyebrow">Data Insights</span>
+        <div class="action-row">
+          <a class="admin-link" href="/admin">返回后台</a>
+          <a class="admin-link" href="/">返回前台</a>
+        </div>
+      </header>
+
+      <section class="hero">
+        <h1>SQLite 数据查看页</h1>
+        <p class="lead">直接读取本地 SQLite，集中看总量、近 14 天趋势、事件类型分布、访客明细、失败记录和退款状态。</p>
+      </section>
+
+      <section class="panel">
+        <div class="dashboard-header">
+          <h2>数据总览</h2>
+          <div class="action-row">
+            <button id="export-funnel-button" type="button" class="secondary-button">导出趋势 CSV</button>
+            <button id="export-failures-button" type="button" class="secondary-button">导出失败记录 CSV</button>
+            <button id="refresh-button" type="button">刷新数据</button>
+          </div>
+        </div>
+        <dl class="metrics" id="insight-metrics"></dl>
+      </section>
+
+      <section class="panel">
+        <div class="dashboard-header">
+          <h2>筛选</h2>
+          <span class="muted-text">修改后点击“应用筛选”</span>
+        </div>
+        <form id="insights-filter-form" class="insights-filter-grid">
+          <label class="field">
+            <span>趋势天数</span>
+            <div class="inline-field">
+              <select id="filter-funnel-days">
+                <option value="7">近 7 天</option>
+                <option value="14" selected>近 14 天</option>
+                <option value="30">近 30 天</option>
+                <option value="60">近 60 天</option>
+              </select>
+            </div>
+          </label>
+          <label class="field">
+            <span>事件统计窗口</span>
+            <div class="inline-field">
+              <select id="filter-event-window-days">
+                <option value="7">近 7 天</option>
+                <option value="30" selected>近 30 天</option>
+                <option value="60">近 60 天</option>
+                <option value="90">近 90 天</option>
+              </select>
+            </div>
+          </label>
+          <label class="field">
+            <span>失败类型</span>
+            <div class="inline-field">
+              <select id="filter-failure-type">
+                <option value="all" selected>全部失败</option>
+                <option value="upload_failure">仅上传失败</option>
+                <option value="compress_failure">仅压缩失败</option>
+              </select>
+            </div>
+          </label>
+          <label class="field">
+            <span>访客条数</span>
+            <div class="inline-field"><input id="filter-visitors-limit" type="number" min="1" max="100" value="20" /></div>
+          </label>
+          <label class="field">
+            <span>失败记录条数</span>
+            <div class="inline-field"><input id="filter-failures-limit" type="number" min="1" max="100" value="20" /></div>
+          </label>
+          <label class="field">
+            <span>退款条数</span>
+            <div class="inline-field"><input id="filter-refunds-limit" type="number" min="1" max="100" value="20" /></div>
+          </label>
+          <div class="action-row insights-filter-actions">
+            <button id="apply-filters-button" type="submit">应用筛选</button>
+            <button id="reset-filters-button" type="button" class="secondary-button">重置</button>
+          </div>
+        </form>
+      </section>
+
+      <div class="grid-two insights-grid">
+        <section class="table-card">
+          <div class="dashboard-header">
+            <h3 id="funnel-chart-title">近 14 天漏斗趋势</h3>
+            <span class="muted-text">访问 / 上传 / 压缩 / 下载</span>
+          </div>
+          <div class="chart-card" id="daily-funnel-chart"></div>
+        </section>
+
+        <section class="table-card">
+          <div class="dashboard-header">
+            <h3 id="event-chart-title">近 30 天事件类型</h3>
+            <span class="muted-text">按事件总量排序</span>
+          </div>
+          <div class="chart-card" id="event-type-chart"></div>
+        </section>
+      </div>
+
+      <section class="table-card">
+        <div class="dashboard-header">
+          <h3 id="funnel-table-title">近 14 天数据表</h3>
+          <span class="muted-text">适合快速核对趋势</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th>UV</th>
+                <th>PV</th>
+                <th>上传成功</th>
+                <th>压缩发起</th>
+                <th>压缩成功</th>
+                <th>压缩失败</th>
+                <th>下载成功</th>
+                <th>触发付费</th>
+                <th>购买点击</th>
+                <th>退款申请</th>
+              </tr>
+            </thead>
+            <tbody id="funnel-table"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="grid-two insights-grid">
+        <section class="table-card">
+          <div class="dashboard-header">
+            <h3 id="visitors-table-title">最近访客</h3>
+            <span class="muted-text">按最近访问排序</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>访客ID</th>
+                  <th>最近访问</th>
+                  <th>PV</th>
+                  <th>上传成功</th>
+                  <th>压缩成功</th>
+                  <th>压缩失败</th>
+                  <th>下载成功</th>
+                  <th>额度已用</th>
+                </tr>
+              </thead>
+              <tbody id="visitor-insights-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="table-card">
+          <div class="dashboard-header">
+            <h3 id="failures-table-title">最近失败记录</h3>
+            <span class="muted-text">上传失败 / 压缩失败</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>类型</th>
+                  <th>访客ID</th>
+                  <th>文件名</th>
+                  <th>信息</th>
+                </tr>
+              </thead>
+              <tbody id="failure-table"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <section class="table-card">
+        <div class="dashboard-header">
+          <h3 id="refunds-table-title">退款记录</h3>
+          <span class="muted-text">按申请时间倒序</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>申请时间</th>
+                <th>状态</th>
+                <th>联系邮箱</th>
+                <th>退款账户</th>
+                <th>套餐</th>
+                <th>金额</th>
+                <th>后台备注</th>
+              </tr>
+            </thead>
+            <tbody id="refund-insights-table"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script src="/insights.js" defer></script>
+  </body>
+</html>

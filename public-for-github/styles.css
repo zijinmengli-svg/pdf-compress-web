@@ -318,6 +318,10 @@ button:disabled {
   font-weight: 700;
 }
 
+#download-row {
+  margin-top: 20px;
+}
+
 .package-grid,
 .payment-list,
 .editor-list {
@@ -413,95 +417,6 @@ th {
   color: var(--muted);
 }
 
-.insights-grid {
-  margin-bottom: 20px;
-}
-
-.insights-filter-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 16px;
-}
-
-.insights-filter-actions {
-  align-items: end;
-}
-
-.chart-card {
-  display: grid;
-  gap: 14px;
-}
-
-.chart-row {
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  gap: 14px;
-  align-items: start;
-}
-
-.chart-label {
-  padding-top: 10px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--muted);
-}
-
-.chart-bars {
-  display: grid;
-  gap: 10px;
-}
-
-.chart-bar-group {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) 56px;
-  gap: 10px;
-  align-items: center;
-}
-
-.chart-bar-label,
-.chart-bar-value {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--muted);
-}
-
-.chart-bar-track {
-  height: 12px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: rgba(20, 33, 61, 0.08);
-}
-
-.chart-bar-fill {
-  height: 100%;
-  border-radius: inherit;
-  min-width: 4px;
-}
-
-.chart-bar-fill.is-brand {
-  background: linear-gradient(135deg, var(--brand), var(--brand-dark));
-}
-
-.chart-bar-fill.is-warning {
-  background: linear-gradient(135deg, #e4a12c, #b9770e);
-}
-
-.chart-bar-fill.is-success {
-  background: linear-gradient(135deg, #159f7a, var(--success));
-}
-
-.chart-bar-fill.is-muted {
-  background: linear-gradient(135deg, #6b7280, #3f4b5f);
-}
-
-.empty-state {
-  padding: 18px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(20, 33, 61, 0.08);
-  color: var(--muted);
-}
-
 @media (max-width: 900px) {
   .grid-two {
     grid-template-columns: 1fr;
@@ -517,11 +432,6 @@ th {
 
   .panel {
     padding: 18px;
-  }
-
-  .chart-row,
-  .chart-bar-group {
-    grid-template-columns: 1fr;
   }
 
   button,

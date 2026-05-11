@@ -22,6 +22,7 @@ const RASTER_BINARY = path.join(BUILD_DIR, "rasterize-pdf");
 const INSPECT_BINARY = path.join(BUILD_DIR, "inspect-pdf");
 const SETTINGS_FILE = path.join(DATA_DIR, "settings.json");
 const ANALYTICS_FILE = path.join(DATA_DIR, "analytics.json");
+const ANALYTICS_DB_FILE = path.join(DATA_DIR, "analytics.sqlite");
 const VISITOR_COOKIE = "pdf_tool_visitor";
 const ADMIN_COOKIE = "pdf_tool_admin";
 const MAX_EVENTS = 20000;
@@ -177,6 +178,562 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
+function sqlValue(value) {
+  if (value == null) return "NULL";
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? String(value) : "NULL";
+  }
+  if (typeof value === "boolean") {
+    return value ? "1" : "0";
+  }
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function normalizeVisitorRecord(raw) {
+  const visitor = {
+    ...visitorTemplate({ headers: {}, socket: { remoteAddress: "" } }, String(raw?.id || crypto.randomUUID())),
+    ...(raw || {})
+  };
+  visitor.id = String(visitor.id);
+  visitor.firstSeenAt = Number(visitor.firstSeenAt) || now();
+  visitor.lastSeenAt = Number(visitor.lastSeenAt) || visitor.firstSeenAt;
+  visitor.firstIp = String(visitor.firstIp || "");
+  visitor.lastIp = String(visitor.lastIp || "");
+  visitor.userAgent = String(visitor.userAgent || "");
+  visitor.pageVisits = Number(visitor.pageVisits) || 0;
+  visitor.uploadClicks = Number(visitor.uploadClicks) || 0;
+  visitor.uploadSuccess = Number(visitor.uploadSuccess) || 0;
+  visitor.uploadFailure = Number(visitor.uploadFailure) || 0;
+  visitor.targetInputs = Number(visitor.targetInputs) || 0;
+  visitor.compressStarts = Number(visitor.compressStarts || visitor.jobsStarted) || 0;
+  visitor.compressSuccess = Number(visitor.compressSuccess) || 0;
+  visitor.compressPartialSuccess = Number(visitor.compressPartialSuccess) || 0;
+  visitor.compressFailure = Number(visitor.compressFailure) || 0;
+  visitor.downloadClicks = Number(visitor.downloadClicks) || 0;
+  visitor.downloadSuccess = Number(visitor.downloadSuccess || visitor.downloads) || 0;
+  visitor.paymentTriggerCount = Number(visitor.paymentTriggerCount) || 0;
+  visitor.packageViews = Number(visitor.packageViews) || 0;
+  visitor.purchaseClicks = Number(visitor.purchaseClicks || visitor.manualPaidUnlocks) || 0;
+  visitor.supportClicks = Number(visitor.supportClicks) || 0;
+  visitor.refundRequests = Number(visitor.refundRequests) || 0;
+  visitor.refundProcessed = Number(visitor.refundProcessed) || 0;
+  visitor.quotaUsed = Number(visitor.quotaUsed) || 0;
+  visitor.quotaResetKey = String(visitor.quotaResetKey || dayKey(visitor.lastSeenAt));
+  visitor.paidCredits = Number(visitor.paidCredits) || 0;
+  visitor.memberUntil = visitor.memberUntil == null ? null : Number(visitor.memberUntil) || null;
+  return visitor;
+}
+
+function normalizeAnalyticsState(parsed = {}) {
+  const visitors = {};
+  for (const [visitorId, value] of Object.entries(parsed.visitors || {})) {
+    visitors[visitorId] = normalizeVisitorRecord({ ...value, id: value?.id || visitorId });
+  }
+  analyticsState.visitors = visitors;
+  analyticsState.events = Array.isArray(parsed.events)
+    ? parsed.events.map((event) => ({
+      ...event,
+      id: String(event.id || crypto.randomUUID()),
+      type: String(event.type || ""),
+      visitorId: String(event.visitorId || ""),
+      ip: String(event.ip || ""),
+      userAgent: String(event.userAgent || ""),
+      time: Number(event.time) || now(),
+      targetMB: event.targetMB == null ? null : Number(event.targetMB),
+      fileName: event.fileName == null ? null : String(event.fileName),
+      fileBytes: event.fileBytes == null ? null : Number(event.fileBytes),
+      jobId: event.jobId == null ? null : String(event.jobId),
+      message: event.message == null ? null : String(event.message),
+      packageId: event.packageId == null ? null : String(event.packageId),
+      resultBytes: event.resultBytes == null ? null : Number(event.resultBytes)
+    }))
+    : [];
+  analyticsState.exceptionTasks = Array.isArray(parsed.exceptionTasks)
+    ? parsed.exceptionTasks.map((task) => ({
+      ...task,
+      id: String(task.id || crypto.randomUUID()),
+      kind: String(task.kind || "unknown"),
+      time: Number(task.time) || now(),
+      jobId: task.jobId == null ? null : String(task.jobId),
+      fileName: task.fileName == null ? null : String(task.fileName),
+      message: task.message == null ? null : String(task.message)
+    }))
+    : [];
+  analyticsState.refundRequests = Array.isArray(parsed.refundRequests)
+    ? parsed.refundRequests.map((item) => ({
+      ...item,
+      id: String(item.id || `refund_${Date.now()}`),
+      visitorId: String(item.visitorId || ""),
+      status: item.status === "refunded" ? "refunded" : "pending",
+      createdAt: Number(item.createdAt) || now(),
+      refundedAt: item.refundedAt == null ? null : Number(item.refundedAt) || null,
+      contactEmail: String(item.contactEmail || ""),
+      paymentAccount: String(item.paymentAccount || ""),
+      paymentName: String(item.paymentName || ""),
+      reason: String(item.reason || ""),
+      packageId: String(item.packageId || ""),
+      packageName: String(item.packageName || ""),
+      amountCny: item.amountCny == null ? null : Number(item.amountCny) || 0,
+      adminNote: String(item.adminNote || "")
+    }))
+    : [];
+}
+
+function sqliteExec(args, { allowEmpty = false } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("sqlite3", args, {
+      cwd: ROOT,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve(allowEmpty ? stdout : stdout.trim());
+        return;
+      }
+      reject(new Error(stderr.trim() || `sqlite3 exited with code ${code}`));
+    });
+  });
+}
+
+async function sqliteRun(sql) {
+  await sqliteExec([ANALYTICS_DB_FILE, sql], { allowEmpty: true });
+}
+
+async function sqliteQueryJson(sql) {
+  const raw = await sqliteExec(["-json", ANALYTICS_DB_FILE, sql], { allowEmpty: true });
+  const text = raw.trim();
+  if (!text) return [];
+  return JSON.parse(text);
+}
+
+async function initializeAnalyticsDb() {
+  await sqliteRun(`
+    PRAGMA journal_mode = WAL;
+    CREATE TABLE IF NOT EXISTS visitors (
+      id TEXT PRIMARY KEY,
+      first_seen_at INTEGER NOT NULL,
+      last_seen_at INTEGER NOT NULL,
+      first_ip TEXT,
+      last_ip TEXT,
+      user_agent TEXT,
+      page_visits INTEGER NOT NULL DEFAULT 0,
+      upload_clicks INTEGER NOT NULL DEFAULT 0,
+      upload_success INTEGER NOT NULL DEFAULT 0,
+      upload_failure INTEGER NOT NULL DEFAULT 0,
+      target_inputs INTEGER NOT NULL DEFAULT 0,
+      compress_starts INTEGER NOT NULL DEFAULT 0,
+      compress_success INTEGER NOT NULL DEFAULT 0,
+      compress_partial_success INTEGER NOT NULL DEFAULT 0,
+      compress_failure INTEGER NOT NULL DEFAULT 0,
+      download_clicks INTEGER NOT NULL DEFAULT 0,
+      download_success INTEGER NOT NULL DEFAULT 0,
+      payment_trigger_count INTEGER NOT NULL DEFAULT 0,
+      package_views INTEGER NOT NULL DEFAULT 0,
+      purchase_clicks INTEGER NOT NULL DEFAULT 0,
+      support_clicks INTEGER NOT NULL DEFAULT 0,
+      refund_requests INTEGER NOT NULL DEFAULT 0,
+      refund_processed INTEGER NOT NULL DEFAULT 0,
+      quota_used INTEGER NOT NULL DEFAULT 0,
+      quota_reset_key TEXT,
+      paid_credits INTEGER NOT NULL DEFAULT 0,
+      member_until INTEGER
+    );
+    CREATE TABLE IF NOT EXISTS events (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      visitor_id TEXT NOT NULL,
+      ip TEXT,
+      user_agent TEXT,
+      time INTEGER NOT NULL,
+      target_mb REAL,
+      file_name TEXT,
+      file_bytes INTEGER,
+      job_id TEXT,
+      message TEXT,
+      package_id TEXT,
+      result_bytes INTEGER
+    );
+    CREATE TABLE IF NOT EXISTS exception_tasks (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      time INTEGER NOT NULL,
+      job_id TEXT,
+      file_name TEXT,
+      message TEXT
+    );
+    CREATE TABLE IF NOT EXISTS refund_requests (
+      id TEXT PRIMARY KEY,
+      visitor_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      refunded_at INTEGER,
+      contact_email TEXT,
+      payment_account TEXT,
+      payment_name TEXT,
+      reason TEXT,
+      package_id TEXT,
+      package_name TEXT,
+      amount_cny REAL,
+      admin_note TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_events_time ON events(time);
+    CREATE INDEX IF NOT EXISTS idx_events_type_time ON events(type, time);
+    CREATE INDEX IF NOT EXISTS idx_events_visitor_time ON events(visitor_id, time);
+    CREATE INDEX IF NOT EXISTS idx_exception_tasks_time ON exception_tasks(time);
+    CREATE INDEX IF NOT EXISTS idx_refund_requests_status_created_at ON refund_requests(status, created_at);
+    DROP VIEW IF EXISTS metabase_daily_event_metrics;
+    CREATE VIEW metabase_daily_event_metrics AS
+      SELECT
+        date(time / 1000, 'unixepoch', 'localtime') AS day,
+        type AS event_type,
+        COUNT(*) AS event_count,
+        COUNT(DISTINCT visitor_id) AS unique_visitors
+      FROM events
+      GROUP BY 1, 2;
+    DROP VIEW IF EXISTS metabase_daily_funnel;
+    CREATE VIEW metabase_daily_funnel AS
+      SELECT
+        date(time / 1000, 'unixepoch', 'localtime') AS day,
+        COUNT(DISTINCT CASE WHEN type = 'page_visit' THEN visitor_id END) AS uv_page_visit,
+        SUM(CASE WHEN type = 'page_visit' THEN 1 ELSE 0 END) AS pv_page_visit,
+        SUM(CASE WHEN type = 'upload_success' THEN 1 ELSE 0 END) AS upload_success_count,
+        SUM(CASE WHEN type = 'compress_start' THEN 1 ELSE 0 END) AS compress_start_count,
+        SUM(CASE WHEN type = 'compress_success' THEN 1 ELSE 0 END) AS compress_success_count,
+        SUM(CASE WHEN type = 'compress_failure' THEN 1 ELSE 0 END) AS compress_failure_count,
+        SUM(CASE WHEN type = 'download_success' THEN 1 ELSE 0 END) AS download_success_count,
+        SUM(CASE WHEN type = 'payment_required' THEN 1 ELSE 0 END) AS payment_required_count,
+        SUM(CASE WHEN type = 'purchase_click' THEN 1 ELSE 0 END) AS purchase_click_count,
+        SUM(CASE WHEN type = 'refund_request_created' THEN 1 ELSE 0 END) AS refund_request_count
+      FROM events
+      GROUP BY 1;
+  `);
+}
+
+async function persistVisitorToDb(visitor) {
+  await sqliteRun(`
+    INSERT INTO visitors (
+      id, first_seen_at, last_seen_at, first_ip, last_ip, user_agent,
+      page_visits, upload_clicks, upload_success, upload_failure, target_inputs,
+      compress_starts, compress_success, compress_partial_success, compress_failure,
+      download_clicks, download_success, payment_trigger_count, package_views,
+      purchase_clicks, support_clicks, refund_requests, refund_processed,
+      quota_used, quota_reset_key, paid_credits, member_until
+    ) VALUES (
+      ${sqlValue(visitor.id)},
+      ${sqlValue(visitor.firstSeenAt)},
+      ${sqlValue(visitor.lastSeenAt)},
+      ${sqlValue(visitor.firstIp)},
+      ${sqlValue(visitor.lastIp)},
+      ${sqlValue(visitor.userAgent)},
+      ${sqlValue(visitor.pageVisits)},
+      ${sqlValue(visitor.uploadClicks)},
+      ${sqlValue(visitor.uploadSuccess)},
+      ${sqlValue(visitor.uploadFailure)},
+      ${sqlValue(visitor.targetInputs)},
+      ${sqlValue(visitor.compressStarts)},
+      ${sqlValue(visitor.compressSuccess)},
+      ${sqlValue(visitor.compressPartialSuccess)},
+      ${sqlValue(visitor.compressFailure)},
+      ${sqlValue(visitor.downloadClicks)},
+      ${sqlValue(visitor.downloadSuccess)},
+      ${sqlValue(visitor.paymentTriggerCount)},
+      ${sqlValue(visitor.packageViews)},
+      ${sqlValue(visitor.purchaseClicks)},
+      ${sqlValue(visitor.supportClicks)},
+      ${sqlValue(visitor.refundRequests)},
+      ${sqlValue(visitor.refundProcessed)},
+      ${sqlValue(visitor.quotaUsed)},
+      ${sqlValue(visitor.quotaResetKey)},
+      ${sqlValue(visitor.paidCredits)},
+      ${sqlValue(visitor.memberUntil)}
+    )
+    ON CONFLICT(id) DO UPDATE SET
+      first_seen_at = excluded.first_seen_at,
+      last_seen_at = excluded.last_seen_at,
+      first_ip = excluded.first_ip,
+      last_ip = excluded.last_ip,
+      user_agent = excluded.user_agent,
+      page_visits = excluded.page_visits,
+      upload_clicks = excluded.upload_clicks,
+      upload_success = excluded.upload_success,
+      upload_failure = excluded.upload_failure,
+      target_inputs = excluded.target_inputs,
+      compress_starts = excluded.compress_starts,
+      compress_success = excluded.compress_success,
+      compress_partial_success = excluded.compress_partial_success,
+      compress_failure = excluded.compress_failure,
+      download_clicks = excluded.download_clicks,
+      download_success = excluded.download_success,
+      payment_trigger_count = excluded.payment_trigger_count,
+      package_views = excluded.package_views,
+      purchase_clicks = excluded.purchase_clicks,
+      support_clicks = excluded.support_clicks,
+      refund_requests = excluded.refund_requests,
+      refund_processed = excluded.refund_processed,
+      quota_used = excluded.quota_used,
+      quota_reset_key = excluded.quota_reset_key,
+      paid_credits = excluded.paid_credits,
+      member_until = excluded.member_until;
+  `);
+}
+
+async function persistEventToDb(event) {
+  await sqliteRun(`
+    INSERT OR REPLACE INTO events (
+      id, type, visitor_id, ip, user_agent, time,
+      target_mb, file_name, file_bytes, job_id, message, package_id, result_bytes
+    ) VALUES (
+      ${sqlValue(event.id)},
+      ${sqlValue(event.type)},
+      ${sqlValue(event.visitorId)},
+      ${sqlValue(event.ip)},
+      ${sqlValue(event.userAgent)},
+      ${sqlValue(event.time)},
+      ${sqlValue(event.targetMB)},
+      ${sqlValue(event.fileName)},
+      ${sqlValue(event.fileBytes)},
+      ${sqlValue(event.jobId)},
+      ${sqlValue(event.message)},
+      ${sqlValue(event.packageId)},
+      ${sqlValue(event.resultBytes)}
+    );
+  `);
+}
+
+async function persistExceptionTaskToDb(task) {
+  await sqliteRun(`
+    INSERT OR REPLACE INTO exception_tasks (
+      id, kind, time, job_id, file_name, message
+    ) VALUES (
+      ${sqlValue(task.id)},
+      ${sqlValue(task.kind)},
+      ${sqlValue(task.time)},
+      ${sqlValue(task.jobId)},
+      ${sqlValue(task.fileName)},
+      ${sqlValue(task.message)}
+    );
+  `);
+}
+
+async function persistRefundRequestToDb(refundRequest) {
+  await sqliteRun(`
+    INSERT OR REPLACE INTO refund_requests (
+      id, visitor_id, status, created_at, refunded_at, contact_email,
+      payment_account, payment_name, reason, package_id, package_name,
+      amount_cny, admin_note
+    ) VALUES (
+      ${sqlValue(refundRequest.id)},
+      ${sqlValue(refundRequest.visitorId)},
+      ${sqlValue(refundRequest.status)},
+      ${sqlValue(refundRequest.createdAt)},
+      ${sqlValue(refundRequest.refundedAt)},
+      ${sqlValue(refundRequest.contactEmail)},
+      ${sqlValue(refundRequest.paymentAccount)},
+      ${sqlValue(refundRequest.paymentName)},
+      ${sqlValue(refundRequest.reason)},
+      ${sqlValue(refundRequest.packageId)},
+      ${sqlValue(refundRequest.packageName)},
+      ${sqlValue(refundRequest.amountCny)},
+      ${sqlValue(refundRequest.adminNote)}
+    );
+  `);
+}
+
+async function syncAllAnalyticsToDb() {
+  const statements = [
+    "BEGIN TRANSACTION;",
+    "DELETE FROM visitors;",
+    "DELETE FROM events;",
+    "DELETE FROM exception_tasks;",
+    "DELETE FROM refund_requests;"
+  ];
+
+  for (const visitor of Object.values(analyticsState.visitors)) {
+    statements.push(`
+      INSERT INTO visitors (
+        id, first_seen_at, last_seen_at, first_ip, last_ip, user_agent,
+        page_visits, upload_clicks, upload_success, upload_failure, target_inputs,
+        compress_starts, compress_success, compress_partial_success, compress_failure,
+        download_clicks, download_success, payment_trigger_count, package_views,
+        purchase_clicks, support_clicks, refund_requests, refund_processed,
+        quota_used, quota_reset_key, paid_credits, member_until
+      ) VALUES (
+        ${sqlValue(visitor.id)}, ${sqlValue(visitor.firstSeenAt)}, ${sqlValue(visitor.lastSeenAt)},
+        ${sqlValue(visitor.firstIp)}, ${sqlValue(visitor.lastIp)}, ${sqlValue(visitor.userAgent)},
+        ${sqlValue(visitor.pageVisits)}, ${sqlValue(visitor.uploadClicks)}, ${sqlValue(visitor.uploadSuccess)},
+        ${sqlValue(visitor.uploadFailure)}, ${sqlValue(visitor.targetInputs)}, ${sqlValue(visitor.compressStarts)},
+        ${sqlValue(visitor.compressSuccess)}, ${sqlValue(visitor.compressPartialSuccess)},
+        ${sqlValue(visitor.compressFailure)}, ${sqlValue(visitor.downloadClicks)}, ${sqlValue(visitor.downloadSuccess)},
+        ${sqlValue(visitor.paymentTriggerCount)}, ${sqlValue(visitor.packageViews)}, ${sqlValue(visitor.purchaseClicks)},
+        ${sqlValue(visitor.supportClicks)}, ${sqlValue(visitor.refundRequests)}, ${sqlValue(visitor.refundProcessed)},
+        ${sqlValue(visitor.quotaUsed)}, ${sqlValue(visitor.quotaResetKey)}, ${sqlValue(visitor.paidCredits)},
+        ${sqlValue(visitor.memberUntil)}
+      );
+    `);
+  }
+
+  for (const event of analyticsState.events) {
+    statements.push(`
+      INSERT INTO events (
+        id, type, visitor_id, ip, user_agent, time, target_mb,
+        file_name, file_bytes, job_id, message, package_id, result_bytes
+      ) VALUES (
+        ${sqlValue(event.id)}, ${sqlValue(event.type)}, ${sqlValue(event.visitorId)},
+        ${sqlValue(event.ip)}, ${sqlValue(event.userAgent)}, ${sqlValue(event.time)},
+        ${sqlValue(event.targetMB)}, ${sqlValue(event.fileName)}, ${sqlValue(event.fileBytes)},
+        ${sqlValue(event.jobId)}, ${sqlValue(event.message)}, ${sqlValue(event.packageId)},
+        ${sqlValue(event.resultBytes)}
+      );
+    `);
+  }
+
+  for (const task of analyticsState.exceptionTasks) {
+    statements.push(`
+      INSERT INTO exception_tasks (id, kind, time, job_id, file_name, message) VALUES (
+        ${sqlValue(task.id)}, ${sqlValue(task.kind)}, ${sqlValue(task.time)},
+        ${sqlValue(task.jobId)}, ${sqlValue(task.fileName)}, ${sqlValue(task.message)}
+      );
+    `);
+  }
+
+  for (const refundRequest of analyticsState.refundRequests) {
+    statements.push(`
+      INSERT INTO refund_requests (
+        id, visitor_id, status, created_at, refunded_at, contact_email, payment_account,
+        payment_name, reason, package_id, package_name, amount_cny, admin_note
+      ) VALUES (
+        ${sqlValue(refundRequest.id)}, ${sqlValue(refundRequest.visitorId)}, ${sqlValue(refundRequest.status)},
+        ${sqlValue(refundRequest.createdAt)}, ${sqlValue(refundRequest.refundedAt)},
+        ${sqlValue(refundRequest.contactEmail)}, ${sqlValue(refundRequest.paymentAccount)},
+        ${sqlValue(refundRequest.paymentName)}, ${sqlValue(refundRequest.reason)},
+        ${sqlValue(refundRequest.packageId)}, ${sqlValue(refundRequest.packageName)},
+        ${sqlValue(refundRequest.amountCny)}, ${sqlValue(refundRequest.adminNote)}
+      );
+    `);
+  }
+
+  statements.push("COMMIT;");
+  await sqliteRun(statements.join("\n"));
+}
+
+async function analyticsDbHasData() {
+  const [row] = await sqliteQueryJson(`
+    SELECT
+      (SELECT COUNT(*) FROM visitors) AS visitors_count,
+      (SELECT COUNT(*) FROM events) AS events_count,
+      (SELECT COUNT(*) FROM exception_tasks) AS exception_tasks_count,
+      (SELECT COUNT(*) FROM refund_requests) AS refund_requests_count;
+  `);
+  const total =
+    Number(row?.visitors_count || 0) +
+    Number(row?.events_count || 0) +
+    Number(row?.exception_tasks_count || 0) +
+    Number(row?.refund_requests_count || 0);
+  return total > 0;
+}
+
+async function loadAnalyticsStateFromDb() {
+  const [visitors, events, exceptionTasks, refundRequests] = await Promise.all([
+    sqliteQueryJson(`
+      SELECT
+        id,
+        first_seen_at AS firstSeenAt,
+        last_seen_at AS lastSeenAt,
+        first_ip AS firstIp,
+        last_ip AS lastIp,
+        user_agent AS userAgent,
+        page_visits AS pageVisits,
+        upload_clicks AS uploadClicks,
+        upload_success AS uploadSuccess,
+        upload_failure AS uploadFailure,
+        target_inputs AS targetInputs,
+        compress_starts AS compressStarts,
+        compress_success AS compressSuccess,
+        compress_partial_success AS compressPartialSuccess,
+        compress_failure AS compressFailure,
+        download_clicks AS downloadClicks,
+        download_success AS downloadSuccess,
+        payment_trigger_count AS paymentTriggerCount,
+        package_views AS packageViews,
+        purchase_clicks AS purchaseClicks,
+        support_clicks AS supportClicks,
+        refund_requests AS refundRequests,
+        refund_processed AS refundProcessed,
+        quota_used AS quotaUsed,
+        quota_reset_key AS quotaResetKey,
+        paid_credits AS paidCredits,
+        member_until AS memberUntil
+      FROM visitors;
+    `),
+    sqliteQueryJson(`
+      SELECT
+        id,
+        type,
+        visitor_id AS visitorId,
+        ip,
+        user_agent AS userAgent,
+        time,
+        target_mb AS targetMB,
+        file_name AS fileName,
+        file_bytes AS fileBytes,
+        job_id AS jobId,
+        message,
+        package_id AS packageId,
+        result_bytes AS resultBytes
+      FROM events
+      ORDER BY time DESC
+      LIMIT ${MAX_EVENTS};
+    `),
+    sqliteQueryJson(`
+      SELECT
+        id,
+        kind,
+        time,
+        job_id AS jobId,
+        file_name AS fileName,
+        message
+      FROM exception_tasks
+      ORDER BY time DESC
+      LIMIT ${MAX_EXCEPTION_TASKS};
+    `),
+    sqliteQueryJson(`
+      SELECT
+        id,
+        visitor_id AS visitorId,
+        status,
+        created_at AS createdAt,
+        refunded_at AS refundedAt,
+        contact_email AS contactEmail,
+        payment_account AS paymentAccount,
+        payment_name AS paymentName,
+        reason,
+        package_id AS packageId,
+        package_name AS packageName,
+        amount_cny AS amountCny,
+        admin_note AS adminNote
+      FROM refund_requests
+      ORDER BY created_at DESC
+      LIMIT 2000;
+    `)
+  ]);
+
+  normalizeAnalyticsState({
+    visitors: Object.fromEntries(visitors.map((visitor) => [visitor.id, visitor])),
+    events: events.reverse(),
+    exceptionTasks: exceptionTasks.reverse(),
+    refundRequests: refundRequests.reverse()
+  });
+}
+
 async function ensureDirectories() {
   await Promise.all([
     fsp.mkdir(DATA_DIR, { recursive: true }),
@@ -186,6 +743,7 @@ async function ensureDirectories() {
 
 async function loadState() {
   await ensureDirectories();
+  await initializeAnalyticsDb();
   try {
     const raw = await fsp.readFile(SETTINGS_FILE, "utf8");
     settingsState = normalizeSettings(JSON.parse(raw));
@@ -194,16 +752,21 @@ async function loadState() {
     await fsp.writeFile(SETTINGS_FILE, `${JSON.stringify(settingsState, null, 2)}\n`);
   }
 
+  if (await analyticsDbHasData()) {
+    await loadAnalyticsStateFromDb();
+    await persistState();
+    return;
+  }
+
   try {
     const raw = await fsp.readFile(ANALYTICS_FILE, "utf8");
-    const parsed = JSON.parse(raw);
-    analyticsState.visitors = parsed.visitors || {};
-    analyticsState.events = parsed.events || [];
-    analyticsState.exceptionTasks = parsed.exceptionTasks || [];
-    analyticsState.refundRequests = parsed.refundRequests || [];
+    normalizeAnalyticsState(JSON.parse(raw));
+    await syncAllAnalyticsToDb();
   } catch {
-    await persistState();
+    normalizeAnalyticsState();
+    await syncAllAnalyticsToDb();
   }
+  await persistState();
 }
 
 function normalizePackages(packages) {
@@ -272,8 +835,13 @@ async function persistState() {
   ]);
 }
 
-function queuePersist() {
-  persistQueue = persistQueue.then(persistState).catch(() => {});
+function queuePersist(task) {
+  persistQueue = persistQueue.then(async () => {
+    await persistState();
+    if (task) {
+      await task();
+    }
+  }).catch(() => {});
   return persistQueue;
 }
 
@@ -399,6 +967,7 @@ function getVisitor(req, res) {
   }
   if (!analyticsState.visitors[visitorId]) {
     analyticsState.visitors[visitorId] = visitorTemplate(req, visitorId);
+    queuePersist(() => persistVisitorToDb(analyticsState.visitors[visitorId]));
   }
   const visitor = analyticsState.visitors[visitorId];
   visitor.lastSeenAt = now();
@@ -463,21 +1032,25 @@ function logVisitorEvent(visitorId, type, meta = {}, ip = "", userAgent = "") {
   if (analyticsState.events.length > MAX_EVENTS) {
     analyticsState.events.splice(0, analyticsState.events.length - MAX_EVENTS);
   }
-  queuePersist();
+  queuePersist(async () => {
+    await persistVisitorToDb(visitor);
+    await persistEventToDb(event);
+  });
   return event;
 }
 
 function logExceptionTask(kind, payload) {
-  analyticsState.exceptionTasks.push({
+  const task = {
     id: crypto.randomUUID(),
     kind,
     time: now(),
     ...payload
-  });
+  };
+  analyticsState.exceptionTasks.push(task);
   if (analyticsState.exceptionTasks.length > MAX_EXCEPTION_TASKS) {
     analyticsState.exceptionTasks.splice(0, analyticsState.exceptionTasks.length - MAX_EXCEPTION_TASKS);
   }
-  queuePersist();
+  queuePersist(() => persistExceptionTaskToDb(task));
 }
 
 function findRefundRequest(refundId) {
@@ -1035,7 +1608,7 @@ async function createJobFromRequest(req, res) {
     clients: []
   };
   jobs.set(jobId, job);
-  queuePersist();
+  queuePersist(() => persistVisitorToDb(visitor));
   runJob(job, req.headers["user-agent"] || "", clientIp(req));
 
   return {
@@ -1323,6 +1896,163 @@ function buildExportWorkbookHtml() {
 </html>`;
 }
 
+function clampInteger(value, fallback, min, max) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function insightsFailureCondition(value) {
+  if (value === "upload_failure") return `type = 'upload_failure'`;
+  if (value === "compress_failure") return `type = 'compress_failure'`;
+  return `type IN ('upload_failure', 'compress_failure')`;
+}
+
+async function buildAdminInsights(options = {}) {
+  const funnelDays = clampInteger(options.funnelDays, 14, 1, 90);
+  const eventWindowDays = clampInteger(options.eventWindowDays, 30, 1, 180);
+  const visitorsLimit = clampInteger(options.visitorsLimit, 20, 1, 100);
+  const failuresLimit = clampInteger(options.failuresLimit, 20, 1, 100);
+  const refundsLimit = clampInteger(options.refundsLimit, 20, 1, 100);
+  const failureType = ["all", "upload_failure", "compress_failure"].includes(options.failureType)
+    ? options.failureType
+    : "all";
+  const failureWhere = insightsFailureCondition(failureType);
+
+  const [totalsRow] = await sqliteQueryJson(`
+    SELECT
+      (SELECT COUNT(*) FROM visitors) AS visitors,
+      (SELECT COUNT(*) FROM events) AS events,
+      (SELECT COUNT(*) FROM exception_tasks) AS exception_tasks,
+      (SELECT COUNT(*) FROM refund_requests) AS refund_requests,
+      (SELECT COUNT(*) FROM refund_requests WHERE status = 'pending') AS pending_refunds,
+      (SELECT COUNT(*) FROM events WHERE type = 'compress_failure') AS compress_failures;
+  `);
+
+  const [latestEventRow] = await sqliteQueryJson(`
+    SELECT datetime(MAX(time) / 1000, 'unixepoch', 'localtime') AS latest_event_time
+    FROM events;
+  `);
+
+  const [latestVisitorRow] = await sqliteQueryJson(`
+    SELECT datetime(MAX(last_seen_at) / 1000, 'unixepoch', 'localtime') AS latest_seen_time
+    FROM visitors;
+  `);
+
+  const [funnelRows, eventTypeRows, topVisitors, recentFailures, refundRows] = await Promise.all([
+    sqliteQueryJson(`
+      SELECT
+        day,
+        uv_page_visit,
+        pv_page_visit,
+        upload_success_count,
+        compress_start_count,
+        compress_success_count,
+        compress_failure_count,
+        download_success_count,
+        payment_required_count,
+        purchase_click_count,
+        refund_request_count
+      FROM metabase_daily_funnel
+      ORDER BY day DESC
+      LIMIT ${funnelDays};
+    `),
+    sqliteQueryJson(`
+      SELECT
+        type AS event_type,
+        COUNT(*) AS event_count,
+        COUNT(DISTINCT visitor_id) AS unique_visitors
+      FROM events
+      WHERE time >= (strftime('%s', 'now', '-${eventWindowDays} day') * 1000)
+      GROUP BY type
+      ORDER BY event_count DESC, event_type ASC
+      LIMIT 12;
+    `),
+    sqliteQueryJson(`
+      SELECT
+        id AS visitor_id,
+        datetime(last_seen_at / 1000, 'unixepoch', 'localtime') AS last_seen_at,
+        page_visits,
+        upload_success,
+        compress_success,
+        compress_failure,
+        download_success,
+        quota_used,
+        paid_credits
+      FROM visitors
+      ORDER BY last_seen_at DESC
+      LIMIT ${visitorsLimit};
+    `),
+    sqliteQueryJson(`
+      SELECT
+        datetime(time / 1000, 'unixepoch', 'localtime') AS event_time,
+        type,
+        visitor_id,
+        file_name,
+        message,
+        job_id
+      FROM events
+      WHERE ${failureWhere}
+      ORDER BY time DESC
+      LIMIT ${failuresLimit};
+    `),
+    sqliteQueryJson(`
+      SELECT
+        datetime(created_at / 1000, 'unixepoch', 'localtime') AS created_at,
+        status,
+        contact_email,
+        payment_account,
+        package_name,
+        amount_cny,
+        admin_note
+      FROM refund_requests
+      ORDER BY created_at DESC
+      LIMIT ${refundsLimit};
+    `)
+  ]);
+
+  const orderedFunnelRows = funnelRows.reverse();
+  return {
+    summary: {
+      visitors: Number(totalsRow?.visitors || 0),
+      events: Number(totalsRow?.events || 0),
+      exceptionTasks: Number(totalsRow?.exception_tasks || 0),
+      refundRequests: Number(totalsRow?.refund_requests || 0),
+      pendingRefunds: Number(totalsRow?.pending_refunds || 0),
+      compressFailures: Number(totalsRow?.compress_failures || 0),
+      latestEventTime: latestEventRow?.latest_event_time || "--",
+      latestVisitorTime: latestVisitorRow?.latest_seen_time || "--",
+      funnelDays,
+      eventWindowDays,
+      visitorsLimit,
+      failuresLimit,
+      refundsLimit,
+      failureType
+    },
+    dailyFunnel: orderedFunnelRows.map((row) => ({
+      day: row.day,
+      uvPageVisit: Number(row.uv_page_visit || 0),
+      pvPageVisit: Number(row.pv_page_visit || 0),
+      uploadSuccessCount: Number(row.upload_success_count || 0),
+      compressStartCount: Number(row.compress_start_count || 0),
+      compressSuccessCount: Number(row.compress_success_count || 0),
+      compressFailureCount: Number(row.compress_failure_count || 0),
+      downloadSuccessCount: Number(row.download_success_count || 0),
+      paymentRequiredCount: Number(row.payment_required_count || 0),
+      purchaseClickCount: Number(row.purchase_click_count || 0),
+      refundRequestCount: Number(row.refund_request_count || 0)
+    })),
+    eventTypes: eventTypeRows.map((row) => ({
+      eventType: row.event_type,
+      eventCount: Number(row.event_count || 0),
+      uniqueVisitors: Number(row.unique_visitors || 0)
+    })),
+    topVisitors,
+    recentFailures,
+    refunds: refundRows
+  };
+}
+
 async function handleAdminLogin(req, res) {
   const body = await readJsonBody(req);
   if (
@@ -1410,7 +2140,7 @@ async function handleManualUnlock(req, res) {
     packageId: selected.id,
     message: "manual_unlock"
   });
-  await queuePersist();
+  await queuePersist(() => persistVisitorToDb(visitor));
   json(res, 200, {
     ok: true,
     config: publicConfigForVisitor(visitor)
@@ -1462,7 +2192,10 @@ async function handleRefundRequest(req, res) {
     message: reason,
     packageId
   });
-  await queuePersist();
+  await queuePersist(async () => {
+    await persistVisitorToDb(visitor);
+    await persistRefundRequestToDb(refundRequest);
+  });
   json(res, 200, {
     ok: true,
     refundId: refundRequest.id,
@@ -1490,7 +2223,13 @@ async function handleAdminRefund(req, res, refundId) {
   logVisitorEvent(refundRequest.visitorId, "refund_processed", {
     message: refundRequest.adminNote || "manual_refund_processed"
   }, "", `admin:${session.username}`);
-  await queuePersist();
+  await queuePersist(async () => {
+    const visitor = analyticsState.visitors[refundRequest.visitorId];
+    if (visitor) {
+      await persistVisitorToDb(visitor);
+    }
+    await persistRefundRequestToDb(refundRequest);
+  });
   json(res, 200, {
     ok: true,
     refundRequest
@@ -1669,6 +2408,20 @@ async function handleRequest(req, res) {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/admin/insights") {
+    const session = requireAdmin(req, res);
+    if (!session) return;
+    json(res, 200, await buildAdminInsights({
+      funnelDays: url.searchParams.get("funnelDays"),
+      eventWindowDays: url.searchParams.get("eventWindowDays"),
+      visitorsLimit: url.searchParams.get("visitorsLimit"),
+      failuresLimit: url.searchParams.get("failuresLimit"),
+      refundsLimit: url.searchParams.get("refundsLimit"),
+      failureType: url.searchParams.get("failureType")
+    }));
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/admin/export") {
     const session = requireAdmin(req, res);
     if (!session) return;
@@ -1688,8 +2441,8 @@ async function handleRequest(req, res) {
   }
 
   if (req.method === "GET") {
-    // 保护后台页面，需要登录
-    if (url.pathname === "/admin" || url.pathname === "/admin.html") {
+    // 数据页需要登录，后台页本身允许进入登录界面
+    if (url.pathname === "/insights" || url.pathname === "/insights.html") {
       const session = getAdminSession(req);
       if (!session) {
         // 未登录，重定向到前台首页
@@ -1701,6 +2454,7 @@ async function handleRequest(req, res) {
 
     const routeMap = {
       "/admin": "/admin.html",
+      "/insights": "/insights.html",
       "/privacy": "/privacy.html",
       "/terms": "/terms.html",
       "/contact": "/contact.html",

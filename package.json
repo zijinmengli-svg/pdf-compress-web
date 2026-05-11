@@ -9,7 +9,16 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "echo \"No tests specified\" && exit 0"
+    "test": "echo \"No tests specified\" && exit 0",
+    "db:tables": "sqlite3 data/analytics.sqlite \".tables\"",
+    "db:summary": "sqlite3 -box data/analytics.sqlite \"select (select count(*) from visitors) as visitors, (select count(*) from events) as events, (select count(*) from exception_tasks) as exception_tasks, (select count(*) from refund_requests) as refund_requests;\"",
+    "db:funnel": "sqlite3 -box data/analytics.sqlite \"select * from metabase_daily_funnel order by day desc limit 14;\"",
+    "db:events": "sqlite3 -box data/analytics.sqlite \"select datetime(time / 1000, 'unixepoch', 'localtime') as event_time, type, visitor_id, file_name, message from events order by time desc limit 20;\"",
+    "db:refunds": "sqlite3 -box data/analytics.sqlite \"select datetime(created_at / 1000, 'unixepoch', 'localtime') as created_at, status, contact_email, payment_account, package_name, amount_cny from refund_requests order by created_at desc limit 20;\"",
+    "report:export": "./scripts/export_report_bundle.sh",
+    "report:install-schedule": "./scripts/install_launchd_reports.sh",
+    "report:uninstall-schedule": "./scripts/uninstall_launchd_reports.sh",
+    "report:status": "cat reports/status/latest.json"
   },
   "keywords": [
     "pdf",

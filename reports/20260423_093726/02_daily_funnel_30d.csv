@@ -1,0 +1,9 @@
+day,uv_page_visit,pv_page_visit,upload_success_count,compress_start_count,compress_success_count,compress_failure_count,download_success_count,payment_required_count,purchase_click_count,refund_request_count
+2026-04-23,1,6,0,0,0,0,0,0,0,0
+2026-04-22,1,1,0,0,0,0,0,0,0,0
+2026-04-21,0,0,1,1,1,0,0,0,0,0
+2026-04-20,1,10,11,7,7,0,2,0,0,0
+2026-04-19,1,6,8,4,4,0,3,0,0,0
+2026-04-18,1,13,23,12,9,2,4,0,0,0
+2026-04-17,1,11,5,2,1,0,2,0,0,1
+2026-04-16,1,1,0,0,0,0,0,0,0,0

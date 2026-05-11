@@ -74,6 +74,44 @@ const QUALITY_STEPS = [
   { scale: 0.2, quality: 0.2 }
 ];
 
+// Add after QUALITY_STEPS (around line 50)
+const authenticate = async (req) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return null;
+
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    return error ? null : user;
+  } catch (e) {
+    console.error('Auth error:', e);
+    return null;
+  }
+};
+
+// Add after authenticate function
+const rateLimit = (() => {
+  const ipCounts = new Map();
+  const windowMs = 300000; // 5 minutes
+  const max = 5;
+
+  return (req) => {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const now = Date.now();
+    const timestamps = ipCounts.get(ip) || [];
+
+    // Clear old timestamps
+    while (timestamps.length > 0 && now - timestamps[0] > windowMs) {
+      timestamps.shift();
+    }
+
+    if (timestamps.length >= max) return false;
+
+    timestamps.push(now);
+    ipCounts.set(ip, timestamps);
+    return true;
+  };
+})();
+
 const RASTER_STEPS = [
   { dpi: 144, quality: 0.82, grayscale: false },
   { dpi: 120, quality: 0.74, grayscale: false },

@@ -32,6 +32,19 @@
 
       <section class="hero">
         <h1>想多大就多大<br />PDF一键压缩神器</h1>
+        <div id="points-display" class="points-badge">
+          Points: <span id="points-value">--</span>
+        </div>
+
+        <style>
+        .points-badge {
+          background: #e0e0e0;
+          padding: 5px 10px;
+          border-radius: 12px;
+          font-weight: bold;
+          margin: 10px 0;
+        }
+        </style>
         <p class="lead">
           仅支持电脑网页版、单个 PDF 文件。保持页数、页面尺寸和版式不变，优先保留图片和文字清晰度。
         </p>
@@ -117,5 +130,27 @@
     </footer>
 
     <script src="/app.js" defer></script>
+    <script>
+    let authToken = localStorage.getItem('pdf-tool-token');
+
+    async function fetchPoints() {
+      if (!authToken) {
+        const res = await fetch('/api/auth/anonymous', { method: 'POST' });
+        const data = await res.json();
+        authToken = data.token;
+        localStorage.setItem('pdf-tool-token', authToken);
+      }
+
+      const res = await fetch('/api/user', {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      const { points } = await res.json();
+      document.getElementById('points-value').textContent = points;
+    }
+
+    // Initial fetch and refresh every 30s
+    fetchPoints();
+    setInterval(fetchPoints, 30000);
+    </script>
   </body>
 </html>

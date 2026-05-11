@@ -2324,6 +2324,36 @@ async function handleTracking(req, res) {
 async function handleRequest(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
+  if (req.method === "POST" && url.pathname === "/api/auth/anonymous") {
+    const device_id = crypto.randomBytes(16).toString('hex');
+
+    const { data, error } = await supabase
+      .from('users')
+      .insert({
+        device_id,
+        points: 10,
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (error) {
+      json(res, 500, { error: 'Failed to create session' });
+      return;
+    }
+
+    const { data: session } = await supabase.auth.signInWithPassword({
+      email: device_id + '@anon.pdfcompressor.com',
+      password: device_id
+    });
+
+    json(res, 200, {
+      token: session.access_token,
+      points: 10
+    });
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/health") {
     json(res, 200, { ok: true });
     return;

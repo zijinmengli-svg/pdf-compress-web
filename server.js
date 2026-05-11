@@ -2265,6 +2265,115 @@ async function handleTracking(req, res) {
   noContent(res);
 }
 
+// REPLACE authenticate function with:
+const authenticate = async (req) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) return null;
+
+  const token = authHeader.replace('Bearer ', '');
+
+  // Basic JWT validation
+  const tokenParts = token.split('.');
+  if (tokenParts.length !== 3) return null;
+
+  try {
+    // Decode payload without verification
+    const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString());
+
+    // Check expiration
+    if (payload.exp && Date.now() >= payload.exp * 1000) return null;
+  } catch (e) {
+    return null;
+  }
+
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    return error ? null : user;
+  } catch (e) {
+    console.error('Auth error:', e);
+    return null;
+  }
+};
+
+// REPLACE rateLimit function with:
+const rateLimit = (() => {
+  const ipCounts = new Map();
+  const cleanupTimers = new Map();
+  const windowMs = 300000; // 5 minutes
+  const max = 5;
+  const cleanupInterval = 3600000; // 1 hour
+  const staleThreshold = 86400000; // 24 hours
+
+  // Cleanup stale entries
+  const cleanupStale = () => {
+    const now = Date.now();
+    for (const [ip, timestamps] of ipCounts) {
+      // Remove timestamps older than window
+      while (timestamps.length > 0 && now - timestamps[0] > windowMs) {
+        timestamps.shift();
+      }
+
+      // Remove empty entries
+      if (timestamps.length === 0) {
+        ipCounts.delete(ip);
+        if (cleanupTimers.has(ip)) {
+          clearTimeout(cleanupTimers.get(ip));
+          cleanupTimers.delete(ip);
+        }
+      }
+    }
+  };
+
+  // Start periodic cleanup
+  const cleanupTimer = setInterval(cleanupStale, cleanupInterval);
+
+  return (req) => {
+    // Secure IP detection
+    let ip;
+    const trustedProxies = process.env.TRUSTED_PROXIES?.split(',') || [];
+
+    if (trustedProxies.includes(req.connection.remoteAddress)) {
+      const xForwardedFor = req.headers['x-forwarded-for'];
+      if (xForwardedFor) {
+        const ips = xForwardedFor.split(',').map(ip => ip.trim());
+        ip = ips[ips.length - 1]; // Last non-proxy IP
+      }
+    }
+
+    ip = ip || req.connection.remoteAddress;
+
+    // Validate IP format
+    if (!/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$|^[0-9a-fA-F:]+$/.test(ip)) {
+      return false; // Invalid IP format
+    }
+
+    const now = Date.now();
+    const timestamps = ipCounts.get(ip) || [];
+
+    // Clear old timestamps
+    while (timestamps.length > 0 && now - timestamps[0] > windowMs) {
+      timestamps.shift();
+    }
+
+    if (timestamps.length >= max) return false;
+
+    timestamps.push(now);
+    ipCounts.set(ip, timestamps);
+
+    // Set up cleanup timer if needed
+    if (!cleanupTimers.has(ip)) {
+      cleanupTimers.set(ip, setTimeout(() => {
+        if (Date.now() - now > staleThreshold) {
+          ipCounts.delete(ip);
+          cleanupTimers.delete(ip);
+        }
+      }, staleThreshold));
+    }
+
+    return true;
+  };
+})();
+
 async function handleRequest(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
 

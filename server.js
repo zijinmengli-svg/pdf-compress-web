@@ -2381,6 +2381,23 @@ async function handleRequest(req, res) {
   }
 
   if (req.method === "POST" && url.pathname === "/api/jobs") {
+    const user = await authenticate(req);
+    if (!user) {
+      sendError(res, 401, "UNAUTHORIZED", "Unauthorized");
+      return;
+    }
+
+    const { data: userData } = await supabase
+      .from('users')
+      .select('points')
+      .eq('id', user.id)
+      .single();
+
+    if (!userData || userData.points < 10) {
+      sendError(res, 402, "INSUFFICIENT_POINTS", "Insufficient points");
+      return;
+    }
+
     try {
       const payload = await createJobFromRequest(req, res);
       json(res, 202, payload);

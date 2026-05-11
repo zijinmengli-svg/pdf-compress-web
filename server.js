@@ -2418,6 +2418,76 @@ async function handleRequest(req, res) {
     return;
   }
 
+  if (url.pathname === '/api/auth/anonymous' && req.method === 'POST') {
+    // Apply rate limiting
+    if (!rateLimit(req)) {
+      response.writeHead(429, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify({ error: 'Too many requests' }));
+      return;
+    }
+
+    try {
+      // Use Supabase built-in anonymous auth
+      const { data: { user }, error: authError } = await supabase.auth.signInAnonymously();
+      if (authError || !user) {
+        throw new Error('Authentication failed');
+      }
+
+      // Create application user record in single transaction
+      const { error: dbError } = await supabase
+        .from('users')
+        .upsert({
+          id: user.id,
+          points: 10,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'id'
+        });
+
+      if (dbError) {
+        // Clean up auth user if DB insertion fails
+        await supabase.auth.admin.deleteUser(user.id);
+        throw new Error('Database operation failed');
+      }
+
+      // Set token expiration to 24 hours
+      const token = user?.access_token;
+      const payload = token?.split('.')[1];
+      if (payload) {
+        try {
+          const decoded = JSON.parse(Buffer.from(payload, 'base64').toString());
+          const now = Math.floor(Date.now() / 1000);
+          if (!decoded.exp || decoded.exp < now + 86400) {
+            // Token doesn't have proper expiration, refresh
+            const { data: { session } } = await supabase.auth.refreshSession();
+            token = session?.access_token;
+          }
+        } catch (e) {
+          console.error('Token inspection error:', e);
+        }
+      }
+
+      // Log successful session creation
+      console.log(`Anonymous session created: ${user.id}`);
+
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify({
+        token,
+        points: 10,
+        expires_in: 86400 // 24 hours in seconds
+      }));
+    } catch (error) {
+      console.error('Anonymous session error:', error);
+      response.writeHead(500, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify({
+        error: 'Failed to create anonymous session',
+        details: error.message
+      }));
+    }
+    return;
+  }
+
   const jobMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)$/);
   if (req.method === "GET" && jobMatch) {
     const job = jobs.get(jobMatch[1]);

@@ -2412,6 +2412,52 @@ async function handleRequest(req, res) {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/consume") {
+    const user = await authenticate(req);
+    if (!user) {
+      sendError(res, 401, "UNAUTHORIZED", "Unauthorized");
+      return;
+    }
+
+    // Verify points exist before deduction
+    const { data: userData } = await supabase
+      .from('users')
+      .select('points')
+      .eq('id', user.id)
+      .single();
+
+    if (!userData || userData.points < 10) {
+      sendError(res, 402, "INSUFFICIENT_POINTS", "Insufficient points");
+      return;
+    }
+
+    // ATOMIC POINTS DEDUCTION
+    const { data: transactionData, error: transactionError } = await supabase
+      .rpc('deduct_points_if_available', {
+        user_id: user.id,
+        points_to_deduct: 10
+      });
+
+    if (transactionError || !transactionData || transactionData.points_remaining < 0) {
+      sendError(res, 402, "TRANSACTION_FAILED", "Transaction failed");
+      return;
+    }
+
+    // Record transaction
+    await supabase
+      .from('transactions')
+      .insert({
+        user_id: user.id,
+        type: 'consume',
+        points: 10,
+        balance_after: transactionData.points_remaining,
+        remark: 'PDF compression'
+      });
+
+    json(res, 200, { success: true });
+    return;
+  }
+
   const jobMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)$/);
   if (req.method === "GET" && jobMatch) {
     const job = jobs.get(jobMatch[1]);

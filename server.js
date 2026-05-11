@@ -5,9 +5,19 @@ const path = require("path");
 const os = require("os");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
+const { createClient } = require('@supabase/supabase-js');
+const { Resend } = require('resend');
 const { URL } = require("url");
 
 const PORT = Number(process.env.PORT || 3487);
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+);
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+
 const HOST = process.env.HOST || "127.0.0.1";
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");

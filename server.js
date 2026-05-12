@@ -2404,6 +2404,24 @@ async function handleRequest(req, res) {
   }
 
   if (req.method === "POST" && url.pathname === "/api/jobs") {
+    const user = await authenticate(req);
+    if (!user) {
+      sendError(res, 401, 'Unauthorized');
+      return;
+    }
+
+    // ATOMIC POINTS VERIFICATION AND DEDUCTION
+    const { data: transactionData, error: transactionError } = await supabase
+      .rpc('deduct_points_if_available', {
+        user_id: user.id,
+        points_to_deduct: 10
+      });
+
+    if (transactionError || !transactionData || transactionData.points_remaining < 0) {
+      sendError(res, 402, 'Insufficient points');
+      return;
+    }
+
     try {
       const payload = await createJobFromRequest(req, res);
       json(res, 202, payload);

@@ -5,9 +5,27 @@ const path = require("path");
 const os = require("os");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
+const { createClient } = require('@supabase/supabase-js');
+const { Resend } = require('resend');
 const { URL } = require("url");
 
 const PORT = Number(process.env.PORT || 3487);
+
+// Validate required environment variables
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
+  throw new Error('SUPABASE_URL and SUPABASE_KEY environment variables must be set');
+}
+if (!process.env.RESEND_API_KEY) {
+  throw new Error('RESEND_API_KEY environment variable must be set');
+}
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+);
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+
 const HOST = process.env.HOST || "127.0.0.1";
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -55,6 +73,44 @@ const QUALITY_STEPS = [
   { scale: 0.24, quality: 0.22 },
   { scale: 0.2, quality: 0.2 }
 ];
+
+// Add after QUALITY_STEPS (around line 50)
+const authenticate = async (req) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return null;
+
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    return error ? null : user;
+  } catch (e) {
+    console.error('Auth error:', e);
+    return null;
+  }
+};
+
+// Add after authenticate function
+const rateLimit = (() => {
+  const ipCounts = new Map();
+  const windowMs = 300000; // 5 minutes
+  const max = 5;
+
+  return (req) => {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const now = Date.now();
+    const timestamps = ipCounts.get(ip) || [];
+
+    // Clear old timestamps
+    while (timestamps.length > 0 && now - timestamps[0] > windowMs) {
+      timestamps.shift();
+    }
+
+    if (timestamps.length >= max) return false;
+
+    timestamps.push(now);
+    ipCounts.set(ip, timestamps);
+    return true;
+  };
+})();
 
 const RASTER_STEPS = [
   { dpi: 144, quality: 0.82, grayscale: false },
@@ -2265,117 +2321,38 @@ async function handleTracking(req, res) {
   noContent(res);
 }
 
-// REPLACE authenticate function with:
-const authenticate = async (req) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) return null;
-
-  const token = authHeader.replace('Bearer ', '');
-
-  // Basic JWT validation
-  const tokenParts = token.split('.');
-  if (tokenParts.length !== 3) return null;
-
-  try {
-    // Decode payload without verification
-    const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString());
-
-    // Check expiration
-    if (payload.exp && Date.now() >= payload.exp * 1000) return null;
-  } catch (e) {
-    return null;
-  }
-
-  try {
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    return error ? null : user;
-  } catch (e) {
-    console.error('Auth error:', e);
-    return null;
-  }
-};
-
-// REPLACE rateLimit function with:
-const rateLimit = (() => {
-  const ipCounts = new Map();
-  const cleanupTimers = new Map();
-  const windowMs = 300000; // 5 minutes
-  const max = 5;
-  const cleanupInterval = 3600000; // 1 hour
-  const staleThreshold = 86400000; // 24 hours
-
-  // Cleanup stale entries
-  const cleanupStale = () => {
-    const now = Date.now();
-    for (const [ip, timestamps] of ipCounts) {
-      // Remove timestamps older than window
-      while (timestamps.length > 0 && now - timestamps[0] > windowMs) {
-        timestamps.shift();
-      }
-
-      // Remove empty entries
-      if (timestamps.length === 0) {
-        ipCounts.delete(ip);
-        if (cleanupTimers.has(ip)) {
-          clearTimeout(cleanupTimers.get(ip));
-          cleanupTimers.delete(ip);
-        }
-      }
-    }
-  };
-
-  // Start periodic cleanup
-  const cleanupTimer = setInterval(cleanupStale, cleanupInterval);
-
-  return (req) => {
-    // Secure IP detection
-    let ip;
-    const trustedProxies = process.env.TRUSTED_PROXIES?.split(',') || [];
-
-    if (trustedProxies.includes(req.connection.remoteAddress)) {
-      const xForwardedFor = req.headers['x-forwarded-for'];
-      if (xForwardedFor) {
-        const ips = xForwardedFor.split(',').map(ip => ip.trim());
-        ip = ips[ips.length - 1]; // Last non-proxy IP
-      }
-    }
-
-    ip = ip || req.connection.remoteAddress;
-
-    // Validate IP format
-    if (!/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$|^[0-9a-fA-F:]+$/.test(ip)) {
-      return false; // Invalid IP format
-    }
-
-    const now = Date.now();
-    const timestamps = ipCounts.get(ip) || [];
-
-    // Clear old timestamps
-    while (timestamps.length > 0 && now - timestamps[0] > windowMs) {
-      timestamps.shift();
-    }
-
-    if (timestamps.length >= max) return false;
-
-    timestamps.push(now);
-    ipCounts.set(ip, timestamps);
-
-    // Set up cleanup timer if needed
-    if (!cleanupTimers.has(ip)) {
-      cleanupTimers.set(ip, setTimeout(() => {
-        if (Date.now() - now > staleThreshold) {
-          ipCounts.delete(ip);
-          cleanupTimers.delete(ip);
-        }
-      }, staleThreshold));
-    }
-
-    return true;
-  };
-})();
-
 async function handleRequest(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
+
+  if (req.method === "POST" && url.pathname === "/api/auth/anonymous") {
+    const device_id = crypto.randomBytes(16).toString('hex');
+
+    const { data, error } = await supabase
+      .from('users')
+      .insert({
+        device_id,
+        points: 10,
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (error) {
+      json(res, 500, { error: 'Failed to create session' });
+      return;
+    }
+
+    const { data: session } = await supabase.auth.signInWithPassword({
+      email: device_id + '@anon.pdfcompressor.com',
+      password: device_id
+    });
+
+    json(res, 200, {
+      token: session.access_token,
+      points: 10
+    });
+    return;
+  }
 
   if (req.method === "GET" && url.pathname === "/api/health") {
     json(res, 200, { ok: true });
@@ -2406,19 +2383,18 @@ async function handleRequest(req, res) {
   if (req.method === "POST" && url.pathname === "/api/jobs") {
     const user = await authenticate(req);
     if (!user) {
-      sendError(res, 401, 'Unauthorized');
+      sendError(res, 401, "UNAUTHORIZED", "Unauthorized");
       return;
     }
 
-    // ATOMIC POINTS VERIFICATION AND DEDUCTION
-    const { data: transactionData, error: transactionError } = await supabase
-      .rpc('deduct_points_if_available', {
-        user_id: user.id,
-        points_to_deduct: 10
-      });
+    const { data: userData } = await supabase
+      .from('users')
+      .select('points')
+      .eq('id', user.id)
+      .single();
 
-    if (transactionError || !transactionData || transactionData.points_remaining < 0) {
-      sendError(res, 402, 'Insufficient points');
+    if (!userData || userData.points < 10) {
+      sendError(res, 402, "INSUFFICIENT_POINTS", "Insufficient points");
       return;
     }
 
@@ -2436,73 +2412,49 @@ async function handleRequest(req, res) {
     return;
   }
 
-  if (url.pathname === '/api/auth/anonymous' && req.method === 'POST') {
-    // Apply rate limiting
-    if (!rateLimit(req)) {
-      response.writeHead(429, { 'Content-Type': 'application/json' });
-      response.end(JSON.stringify({ error: 'Too many requests' }));
+  if (req.method === "POST" && url.pathname === "/api/consume") {
+    const user = await authenticate(req);
+    if (!user) {
+      sendError(res, 401, "UNAUTHORIZED", "Unauthorized");
       return;
     }
 
-    try {
-      // Use Supabase built-in anonymous auth
-      const { data: { user }, error: authError } = await supabase.auth.signInAnonymously();
-      if (authError || !user) {
-        throw new Error('Authentication failed');
-      }
+    // Verify points exist before deduction
+    const { data: userData } = await supabase
+      .from('users')
+      .select('points')
+      .eq('id', user.id)
+      .single();
 
-      // Create application user record in single transaction
-      const { error: dbError } = await supabase
-        .from('users')
-        .upsert({
-          id: user.id,
-          points: 10,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'id'
-        });
-
-      if (dbError) {
-        // Clean up auth user if DB insertion fails
-        await supabase.auth.admin.deleteUser(user.id);
-        throw new Error('Database operation failed');
-      }
-
-      // Set token expiration to 24 hours
-      const token = user?.access_token;
-      const payload = token?.split('.')[1];
-      if (payload) {
-        try {
-          const decoded = JSON.parse(Buffer.from(payload, 'base64').toString());
-          const now = Math.floor(Date.now() / 1000);
-          if (!decoded.exp || decoded.exp < now + 86400) {
-            // Token doesn't have proper expiration, refresh
-            const { data: { session } } = await supabase.auth.refreshSession();
-            token = session?.access_token;
-          }
-        } catch (e) {
-          console.error('Token inspection error:', e);
-        }
-      }
-
-      // Log successful session creation
-      console.log(`Anonymous session created: ${user.id}`);
-
-      response.writeHead(200, { 'Content-Type': 'application/json' });
-      response.end(JSON.stringify({
-        token,
-        points: 10,
-        expires_in: 86400 // 24 hours in seconds
-      }));
-    } catch (error) {
-      console.error('Anonymous session error:', error);
-      response.writeHead(500, { 'Content-Type': 'application/json' });
-      response.end(JSON.stringify({
-        error: 'Failed to create anonymous session',
-        details: error.message
-      }));
+    if (!userData || userData.points < 10) {
+      sendError(res, 402, "INSUFFICIENT_POINTS", "Insufficient points");
+      return;
     }
+
+    // ATOMIC POINTS DEDUCTION
+    const { data: transactionData, error: transactionError } = await supabase
+      .rpc('deduct_points_if_available', {
+        user_id: user.id,
+        points_to_deduct: 10
+      });
+
+    if (transactionError || !transactionData || transactionData.points_remaining < 0) {
+      sendError(res, 402, "TRANSACTION_FAILED", "Transaction failed");
+      return;
+    }
+
+    // Record transaction
+    await supabase
+      .from('transactions')
+      .insert({
+        user_id: user.id,
+        type: 'consume',
+        points: 10,
+        balance_after: transactionData.points_remaining,
+        remark: 'PDF compression'
+      });
+
+    json(res, 200, { success: true });
     return;
   }
 

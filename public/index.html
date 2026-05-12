@@ -32,6 +32,10 @@
 
       <section class="hero">
         <h1>想多大就多大<br />PDF一键压缩神器</h1>
+        <div id="points-display" class="points-badge" aria-live="polite">
+          Points: <span id="points-value">--</span>
+          <span id="points-error" class="error-message" style="display:none;"></span>
+        </div>
         <p class="lead">
           仅支持电脑网页版、单个 PDF 文件。保持页数、页面尺寸和版式不变，优先保留图片和文字清晰度。
         </p>
@@ -117,5 +121,92 @@
     </footer>
 
     <script src="/app.js" defer></script>
+    <script>
+let authToken = localStorage.getItem('pdf-tool-token') || sessionStorage.getItem('pdf-tool-token');
+let retryCount = 0;
+const MAX_RETRIES = 3;
+
+async function fetchPoints() {
+  const pointsValue = document.getElementById('points-value');
+  const pointsError = document.getElementById('points-error');
+
+  // Show loading state
+  pointsValue.textContent = '...';
+  pointsError.style.display = 'none';
+
+  try {
+    // Validate existing token
+    let tokenValid = false;
+    if (authToken) {
+      try {
+        const payload = JSON.parse(atob(authToken.split('.')[1]));
+        tokenValid = payload.exp * 1000 > Date.now();
+      } catch (e) {
+        tokenValid = false;
+      }
+    }
+
+    if (!tokenValid) {
+      const res = await fetch('/api/auth/anonymous', { method: 'POST' });
+      if (!res.ok) throw new Error('Failed to get session');
+
+      const data = await res.json();
+      authToken = data.token;
+
+      // Store in both localStorage and sessionStorage
+      try {
+        localStorage.setItem('pdf-tool-token', authToken);
+      } catch (e) {
+        sessionStorage.setItem('pdf-tool-token', authToken);
+      }
+    }
+
+    const res = await fetch('/api/user', {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+
+    if (!res.ok) {
+      throw new Error(res.status === 401 ?
+        'Session expired' : 'Failed to fetch points');
+    }
+
+    const { points } = await res.json();
+    pointsValue.textContent = points;
+    retryCount = 0;
+
+  } catch (error) {
+    console.error('Points fetch error:', error);
+
+    if (retryCount < MAX_RETRIES) {
+      retryCount++;
+      setTimeout(fetchPoints, 2000 * retryCount);
+
+      if (retryCount === 1) {
+        pointsError.textContent = 'Loading...';
+        pointsError.style.display = 'block';
+      }
+    } else {
+      pointsError.textContent = 'Connection issue. Please refresh.';
+      pointsError.style.display = 'block';
+    }
+  }
+}
+
+// Initial fetch
+fetchPoints();
+
+// Only refresh when tab is visible
+let refreshInterval = setInterval(fetchPoints, 30000);
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    clearInterval(refreshInterval);
+    refreshInterval = setInterval(fetchPoints, 30000);
+    fetchPoints(); // Immediate refresh on tab focus
+  } else {
+    clearInterval(refreshInterval);
+  }
+});
+</script>
   </body>
 </html>

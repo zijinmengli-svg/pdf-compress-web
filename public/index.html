@@ -28,14 +28,17 @@
     <main class="shell">
       <header class="topbar">
         <span class="eyebrow">PDF Compression Skill</span>
+        <div class="points-bar">
+          <div class="points-badge" id="points-display" aria-live="polite">
+            <span class="points-icon">⬡</span>
+            积分：<span class="points-num" id="points-value">--</span>
+          </div>
+          <button type="button" class="login-btn" id="login-btn">绑定邮箱 / 登录</button>
+        </div>
       </header>
 
       <section class="hero">
         <h1>想多大就多大<br />PDF一键压缩神器</h1>
-        <div id="points-display" class="points-badge" aria-live="polite">
-          Points: <span id="points-value">--</span>
-          <span id="points-error" class="error-message" style="display:none;"></span>
-        </div>
         <p class="lead">
           仅支持电脑网页版、单个 PDF 文件。保持页数、页面尺寸和版式不变，优先保留图片和文字清晰度。
         </p>
@@ -83,6 +86,21 @@
           </div>
         </section>
 
+        <!-- 积分不足提示 -->
+        <section class="insufficient-card" id="insufficient-card" hidden>
+          <h2>积分不足</h2>
+          <p id="insufficient-msg">每次压缩消耗 10 积分，当前积分不足，请充值后继续使用。</p>
+          <p class="muted-text">充值规则：1元 = 10积分</p>
+          <div class="redeem-row" style="margin-top:16px">
+            <input type="text" id="redeem-input" placeholder="输入兑换码" autocomplete="off" />
+            <button type="button" id="redeem-btn">使用兑换码</button>
+          </div>
+          <p class="field-error" id="redeem-error" style="margin-top:8px"></p>
+          <p class="modal-success" id="redeem-success" style="margin-top:8px"></p>
+          <p style="margin-top:16px;color:var(--muted);font-size:14px">如需充值请联系客服：<a href="mailto:zijinnmengli@gmail.com">zijinnmengli@gmail.com</a></p>
+        </section>
+
+        <!-- 旧付费卡（billingEnabled 时显示） -->
         <section class="pay-card" id="pay-card" hidden>
           <h2>免费次数已用完</h2>
           <p id="pay-message"></p>
@@ -94,15 +112,6 @@
           </div>
         </section>
       </section>
-
-      <section class="panel" id="package-panel">
-        <div class="dashboard-header">
-          <h2>可用套餐</h2>
-          <span class="muted-text">1.0 版本为展示套餐 + 人工支付确认</span>
-        </div>
-        <div class="package-grid" id="homepage-packages"></div>
-      </section>
-
     </main>
 
     <footer class="site-footer">
@@ -120,93 +129,35 @@
       </div>
     </footer>
 
-    <script src="/app.js" defer></script>
-    <script>
-let authToken = localStorage.getItem('pdf-tool-token') || sessionStorage.getItem('pdf-tool-token');
-let retryCount = 0;
-const MAX_RETRIES = 3;
+    <!-- 登录 / 邮箱绑定弹窗 -->
+    <div id="login-modal" class="modal-overlay">
+      <div class="modal-box">
+        <button type="button" class="modal-close" id="modal-close">×</button>
+        <h2>绑定邮箱 / 登录</h2>
+        <p style="color:var(--muted);font-size:14px;margin:8px 0 20px">绑定邮箱后可在多设备同步积分，新账号赠送 10 积分。</p>
 
-async function fetchPoints() {
-  const pointsValue = document.getElementById('points-value');
-  const pointsError = document.getElementById('points-error');
+        <div class="field" style="margin-bottom:14px">
+          <label for="modal-email" style="font-size:14px;font-weight:600">邮箱地址</label>
+          <div class="inline-field" style="margin-top:6px">
+            <input type="email" id="modal-email" placeholder="your@email.com" autocomplete="email" />
+          </div>
+        </div>
 
-  // Show loading state
-  pointsValue.textContent = '...';
-  pointsError.style.display = 'none';
+        <div class="code-row">
+          <input type="text" id="modal-code" placeholder="6位验证码" maxlength="6" inputmode="numeric" />
+          <button type="button" class="send-code-btn" id="send-code-btn">发送验证码</button>
+        </div>
 
-  try {
-    // Validate existing token
-    let tokenValid = false;
-    if (authToken) {
-      try {
-        const payload = JSON.parse(atob(authToken.split('.')[1]));
-        tokenValid = payload.exp * 1000 > Date.now();
-      } catch (e) {
-        tokenValid = false;
-      }
-    }
+        <p class="modal-error" id="modal-error"></p>
 
-    if (!tokenValid) {
-      const res = await fetch('/api/auth/anonymous', { method: 'POST' });
-      if (!res.ok) throw new Error('Failed to get session');
+        <div class="action-row" style="margin-top:20px">
+          <button type="button" id="verify-btn">确认登录 / 绑定</button>
+        </div>
 
-      const data = await res.json();
-      authToken = data.token;
+        <p class="modal-tip">验证码10分钟有效 · 开发环境下验证码打印到服务器控制台</p>
+      </div>
+    </div>
 
-      // Store in both localStorage and sessionStorage
-      try {
-        localStorage.setItem('pdf-tool-token', authToken);
-      } catch (e) {
-        sessionStorage.setItem('pdf-tool-token', authToken);
-      }
-    }
-
-    const res = await fetch('/api/user', {
-      headers: { 'Authorization': `Bearer ${authToken}` }
-    });
-
-    if (!res.ok) {
-      throw new Error(res.status === 401 ?
-        'Session expired' : 'Failed to fetch points');
-    }
-
-    const { points } = await res.json();
-    pointsValue.textContent = points;
-    retryCount = 0;
-
-  } catch (error) {
-    console.error('Points fetch error:', error);
-
-    if (retryCount < MAX_RETRIES) {
-      retryCount++;
-      setTimeout(fetchPoints, 2000 * retryCount);
-
-      if (retryCount === 1) {
-        pointsError.textContent = 'Loading...';
-        pointsError.style.display = 'block';
-      }
-    } else {
-      pointsError.textContent = 'Connection issue. Please refresh.';
-      pointsError.style.display = 'block';
-    }
-  }
-}
-
-// Initial fetch
-fetchPoints();
-
-// Only refresh when tab is visible
-let refreshInterval = setInterval(fetchPoints, 30000);
-
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') {
-    clearInterval(refreshInterval);
-    refreshInterval = setInterval(fetchPoints, 30000);
-    fetchPoints(); // Immediate refresh on tab focus
-  } else {
-    clearInterval(refreshInterval);
-  }
-});
-</script>
+    <script src="/app-simple.js" defer></script>
   </body>
 </html>

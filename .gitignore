@@ -6,7 +6,13 @@ node_modules/
 
 # Data files (contains user data and settings)
 data/*.json
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
 !data/.gitkeep
+
+# Environment variables (contains API keys — set these in Railway dashboard)
+.env
 
 # Temp files
 *.tmp

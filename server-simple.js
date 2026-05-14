@@ -3,68 +3,194 @@ const fs = require("fs");
 const fsp = fs.promises;
 const path = require("path");
 const os = require("os");
+const crypto = require("crypto");
 const { spawn } = require("child_process");
 const { URL } = require("url");
 
+const sqlite = require("sqlite");
+const sqlite3 = require("sqlite3");
+
+// Load .env file manually (no dotenv dependency needed)
+try {
+  const envContent = fs.readFileSync(path.join(__dirname, ".env"), "utf8");
+  for (const line of envContent.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    const val = trimmed.slice(eqIdx + 1).trim();
+    if (key && val && !process.env[key]) process.env[key] = val;
+  }
+} catch {}
+
+// Optional Resend email integration
+let resendClient = null;
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const RESEND_FROM = process.env.RESEND_FROM || "PDF压缩神器 <noreply@resend.dev>";
+if (RESEND_API_KEY && !RESEND_API_KEY.startsWith("your_")) {
+  try {
+    const { Resend } = require("resend");
+    resendClient = new Resend(RESEND_API_KEY);
+    console.log("[email] Resend initialized");
+  } catch (e) {
+    console.warn("[email] Failed to load resend:", e.message);
+  }
+}
+
 const PORT = Number(process.env.PORT || 3487);
-const HOST = process.env.HOST || "127.0.0.1";
+const HOST = process.env.HOST || "0.0.0.0";
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
-const BUILD_DIR = path.join(ROOT, ".build");
-const SCRIPTS_DIR = path.join(ROOT, "scripts");
-const COMPRESS_SOURCE = path.join(SCRIPTS_DIR, "compress_pdf.swift");
-const RASTER_SOURCE = path.join(SCRIPTS_DIR, "rasterize_pdf.swift");
-const INSPECT_SOURCE = path.join(SCRIPTS_DIR, "inspect_pdf.swift");
-const COMPRESS_BINARY = path.join(BUILD_DIR, "compress-pdf");
-const RASTER_BINARY = path.join(BUILD_DIR, "rasterize-pdf");
-const INSPECT_BINARY = path.join(BUILD_DIR, "inspect-pdf");
+const DATA_DIR = process.env.DB_PATH
+  ? path.dirname(process.env.DB_PATH)
+  : path.join(ROOT, "data");
+const DB_PATH = process.env.DB_PATH || path.join(ROOT, "data", "simple-points.sqlite");
 
-const QUALITY_STEPS = [
-  { scale: 1.0, quality: 0.98 },
-  { scale: 0.98, quality: 0.96 },
-  { scale: 0.96, quality: 0.94 },
-  { scale: 0.94, quality: 0.92 },
-  { scale: 0.92, quality: 0.9 },
-  { scale: 0.88, quality: 0.86 },
-  { scale: 0.84, quality: 0.82 },
-  { scale: 0.8, quality: 0.78 },
-  { scale: 0.76, quality: 0.74 },
-  { scale: 0.72, quality: 0.7 },
-  { scale: 0.68, quality: 0.66 },
-  { scale: 0.64, quality: 0.62 },
-  { scale: 0.6, quality: 0.58 },
-  { scale: 0.56, quality: 0.54 },
-  { scale: 0.52, quality: 0.5 },
-  { scale: 0.48, quality: 0.46 },
-  { scale: 0.44, quality: 0.42 },
-  { scale: 0.4, quality: 0.38 },
-  { scale: 0.36, quality: 0.34 },
-  { scale: 0.32, quality: 0.3 },
-  { scale: 0.28, quality: 0.26 },
-  { scale: 0.24, quality: 0.22 },
-  { scale: 0.2, quality: 0.2 }
+const INITIAL_POINTS = 10;
+const POINTS_PER_COMPRESS = 10;
+let db = null;
+
+// Ghostscript compression steps: progressively lower image DPI + JPEG quality
+const GS_QUALITY_STEPS = [
+  { dpi: 200, jpegQ: 92 },
+  { dpi: 180, jpegQ: 88 },
+  { dpi: 160, jpegQ: 84 },
+  { dpi: 144, jpegQ: 80 },
+  { dpi: 128, jpegQ: 76 },
+  { dpi: 112, jpegQ: 72 },
+  { dpi: 96,  jpegQ: 68 },
+  { dpi: 84,  jpegQ: 64 },
+  { dpi: 72,  jpegQ: 58 },
+  { dpi: 60,  jpegQ: 52 },
+  { dpi: 48,  jpegQ: 45 },
+  { dpi: 36,  jpegQ: 38 },
+  { dpi: 24,  jpegQ: 30 },
+  { dpi: 18,  jpegQ: 22 },
 ];
 
-const RASTER_STEPS = [
-  { dpi: 144, quality: 0.82, grayscale: false },
-  { dpi: 120, quality: 0.74, grayscale: false },
-  { dpi: 96, quality: 0.66, grayscale: false },
-  { dpi: 84, quality: 0.58, grayscale: false },
-  { dpi: 72, quality: 0.5, grayscale: false },
-  { dpi: 60, quality: 0.42, grayscale: false },
-  { dpi: 48, quality: 0.34, grayscale: false },
-  { dpi: 42, quality: 0.28, grayscale: false },
-  { dpi: 36, quality: 0.24, grayscale: true },
-  { dpi: 30, quality: 0.18, grayscale: true },
-  { dpi: 24, quality: 0.14, grayscale: true },
-  { dpi: 18, quality: 0.1, grayscale: true },
-  { dpi: 12, quality: 0.08, grayscale: true },
-  { dpi: 8, quality: 0.05, grayscale: true },
-  { dpi: 6, quality: 0.03, grayscale: true }
+// Deep compression: convert to grayscale at very low DPI
+const GS_RASTER_STEPS = [
+  { dpi: 48, jpegQ: 40, grayscale: false },
+  { dpi: 36, jpegQ: 30, grayscale: false },
+  { dpi: 24, jpegQ: 25, grayscale: true },
+  { dpi: 18, jpegQ: 20, grayscale: true },
+  { dpi: 12, jpegQ: 15, grayscale: true },
+  { dpi: 8,  jpegQ: 10, grayscale: true },
 ];
 
+const sessions = new Map();
+const userCache = new Map();
 const jobs = new Map();
 const eventStreams = new Map();
+const otpStore = new Map(); // email → {code, expires}
+
+async function initDb() {
+  await fsp.mkdir(DATA_DIR, { recursive: true });
+  db = await sqlite.open({ filename: DB_PATH, driver: sqlite3.Database });
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      device_id TEXT UNIQUE NOT NULL,
+      points INTEGER NOT NULL DEFAULT ${INITIAL_POINTS},
+      created_at INTEGER NOT NULL,
+      last_login INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      description TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS redeem_codes (
+      code TEXT PRIMARY KEY,
+      points INTEGER NOT NULL,
+      used INTEGER NOT NULL DEFAULT 0,
+      used_by TEXT,
+      used_at INTEGER,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
+  `);
+
+  // migration: add email column if not present
+  try { await db.exec("ALTER TABLE users ADD COLUMN email TEXT"); } catch {}
+}
+
+function generateToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+async function authenticate(req) {
+  const token = req.headers.authorization?.replace("Bearer ", "");
+  if (!token) return null;
+
+  const session = sessions.get(token);
+  if (!session) return null;
+
+  if (Date.now() - session.createdAt > 7 * 24 * 60 * 60 * 1000) {
+    sessions.delete(token);
+    return null;
+  }
+
+  return session;
+}
+
+async function getOrCreateUser(deviceId) {
+  let user = await db.get("SELECT * FROM users WHERE device_id = ?", [deviceId]);
+
+  if (!user) {
+    const userId = crypto.randomBytes(16).toString("hex");
+    const now = Date.now();
+    await db.run(
+      "INSERT INTO users (id, device_id, points, created_at, last_login) VALUES (?, ?, ?, ?, ?)",
+      [userId, deviceId, INITIAL_POINTS, now, now]
+    );
+    await db.run(
+      "INSERT INTO transactions (user_id, type, amount, description, created_at) VALUES (?, ?, ?, ?, ?)",
+      [userId, "gift", INITIAL_POINTS, "新用户赠送", now]
+    );
+    user = await db.get("SELECT * FROM users WHERE id = ?", [userId]);
+  }
+
+  return user;
+}
+
+async function consumePoints(session, amount = POINTS_PER_COMPRESS) {
+  if (session.points < amount) {
+    return { success: false, message: "积分不足" };
+  }
+
+  const newPoints = session.points - amount;
+
+  await db.run("UPDATE users SET points = ? WHERE id = ?", [newPoints, session.userId]);
+  await db.run(
+    "INSERT INTO transactions (user_id, type, amount, description, created_at) VALUES (?, ?, ?, ?, ?)",
+    [session.userId, "compression", amount, "PDF压缩消耗", Date.now()]
+  );
+
+  session.points = newPoints;
+  return { success: true, points: newPoints };
+}
+
+async function addPoints(session, amount, description = "积分充值") {
+  const newPoints = session.points + amount;
+  await db.run("UPDATE users SET points = ? WHERE id = ?", [newPoints, session.userId]);
+  await db.run(
+    "INSERT INTO transactions (user_id, type, amount, description, created_at) VALUES (?, ?, ?, ?, ?)",
+    [session.userId, "add", amount, description, Date.now()]
+  );
+
+  session.points = newPoints;
+  return { success: true, points: newPoints };
+}
 
 function bytesToMB(bytes) {
   return Number((bytes / 1024 / 1024).toFixed(2));
@@ -92,29 +218,15 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
-async function ensureDirectories() {
-  await fsp.mkdir(BUILD_DIR, { recursive: true });
-}
-
-async function buildSwiftBinaries() {
-  await ensureDirectories();
-  const builds = [
-    { source: COMPRESS_SOURCE, binary: COMPRESS_BINARY },
-    { source: RASTER_SOURCE, binary: RASTER_BINARY },
-    { source: INSPECT_SOURCE, binary: INSPECT_BINARY }
-  ];
-  for (const { source, binary } of builds) {
-    try {
-      await fsp.access(binary, fs.constants.X_OK);
-      const sourceStat = await fsp.stat(source);
-      const binaryStat = await fsp.stat(binary);
-      if (binaryStat.mtime > sourceStat.mtime) continue;
-    } catch {}
-    await new Promise((resolve, reject) => {
-      const swiftc = spawn("swiftc", ["-O", "-o", binary, source]);
-      swiftc.on("close", (code) => code === 0 ? resolve() : reject(new Error(`swiftc failed with ${code}`)));
+async function checkGhostscript() {
+  return new Promise((resolve) => {
+    const proc = spawn("gs", ["--version"]);
+    proc.on("close", (code) => {
+      if (code === 0) { console.log("[gs] Ghostscript ready"); resolve(); }
+      else { console.error("[gs] Ghostscript not found — install ghostscript"); resolve(); }
     });
-  }
+    proc.on("error", () => { console.error("[gs] Ghostscript not found"); resolve(); });
+  });
 }
 
 function generateJobId() {
@@ -141,14 +253,36 @@ function cleanupJob(jobId) {
   eventStreams.delete(jobId);
 }
 
-async function inspectPdf(inputPath) {
-  const { stdout } = await new Promise((resolve, reject) => {
-    const proc = spawn(INSPECT_BINARY, [inputPath]);
-    const out = [];
-    proc.stdout.on("data", (d) => out.push(d));
-    proc.on("close", (code) => code === 0 ? resolve({ stdout: Buffer.concat(out).toString("utf8") }) : reject(new Error(`inspect failed ${code}`)));
+function runGs(args) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("gs", args);
+    const stderr = [];
+    proc.stderr.on("data", (d) => stderr.push(d));
+    proc.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`gs exited ${code}: ${Buffer.concat(stderr).toString("utf8").slice(0, 200)}`));
+    });
+    proc.on("error", reject);
   });
-  return JSON.parse(stdout);
+}
+
+function gsArgs(inputPath, outputPath, dpi, jpegQ, grayscale) {
+  const args = [
+    "-sDEVICE=pdfwrite", "-dNOPAUSE", "-dBATCH", "-dQUIET",
+    "-dCompatibilityLevel=1.4",
+    "-dDownsampleColorImages=true", "-dColorImageDownsampleType=/Bicubic", `-dColorImageResolution=${dpi}`,
+    "-dDownsampleGrayImages=true", "-dGrayImageDownsampleType=/Bicubic",  `-dGrayImageResolution=${dpi}`,
+    "-dDownsampleMonoImages=true", `-dMonoImageResolution=${dpi}`,
+    "-dAutoFilterColorImages=false", "-dAutoFilterGrayImages=false",
+    "-dColorImageFilter=/DCTEncode", "-dGrayImageFilter=/DCTEncode",
+    `-dJPEGQ=${jpegQ}`,
+    `-sOutputFile=${outputPath}`,
+    inputPath
+  ];
+  if (grayscale) {
+    args.splice(1, 0, "-sColorConversionStrategy=Gray", "-dProcessColorModel=/DeviceGray");
+  }
+  return args;
 }
 
 async function compressPdf(jobId, inputPath, targetBytes, originalName) {
@@ -159,8 +293,7 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
   const downloadName = fileNameWithSuffix(sanitizeFileName(originalName), ".compressed");
 
   try {
-    const inspectInfo = await inspectPdf(inputPath);
-    const originalBytes = inspectInfo.fileSize;
+    const originalBytes = (await fsp.stat(inputPath)).size;
 
     job.state.originalBytes = originalBytes;
     job.state.targetBytes = targetBytes;
@@ -173,22 +306,16 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     let lastOutput = null;
     let rasterMode = false;
 
-    for (let i = 0; i < QUALITY_STEPS.length; i++) {
-      const step = QUALITY_STEPS[i];
-      job.state.progress = 0.1 + (i / QUALITY_STEPS.length) * 0.6;
-      job.state.message = `压缩中 (${i + 1}/${QUALITY_STEPS.length})`;
+    // Phase 1: progressive quality reduction
+    for (let i = 0; i < GS_QUALITY_STEPS.length; i++) {
+      const step = GS_QUALITY_STEPS[i];
+      job.state.progress = 0.1 + (i / GS_QUALITY_STEPS.length) * 0.6;
+      job.state.message = `压缩中 (${i + 1}/${GS_QUALITY_STEPS.length})`;
       sendEvent(jobId, job.state);
 
       const tmpOut = `${outputPath}.${i}.tmp`;
       try {
-        await new Promise((resolve, reject) => {
-          const proc = spawn(COMPRESS_BINARY, [
-            inputPath, tmpOut,
-            String(step.scale), String(step.quality)
-          ]);
-          proc.on("close", (code) => code === 0 ? resolve() : reject(new Error(`compress failed ${code}`)));
-        });
-
+        await runGs(gsArgs(inputPath, tmpOut, step.dpi, step.jpegQ, false));
         const stat = await fsp.stat(tmpOut);
         if (stat.size <= targetBytes) {
           await fsp.rename(tmpOut, outputPath);
@@ -197,6 +324,9 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
           lastOutput = outputPath;
           break;
         } else {
+          if (lastOutput && lastOutput !== inputPath && lastOutput !== outputPath) {
+            try { fs.unlinkSync(lastOutput); } catch {}
+          }
           lastOutput = tmpOut;
         }
       } catch {
@@ -204,42 +334,30 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
       }
     }
 
-    if (!resultBytes && lastOutput) {
+    // Phase 2: deep compression (low DPI, optionally grayscale)
+    if (!resultBytes) {
       rasterMode = true;
-      const stat = await fsp.stat(lastOutput);
-      if (stat.size <= targetBytes * 1.5) {
-        await fsp.rename(lastOutput, outputPath);
-        resultBytes = stat.size;
-        ratio = resultBytes / originalBytes;
-      } else {
-        for (let i = 0; i < RASTER_STEPS.length; i++) {
-          const step = RASTER_STEPS[i];
-          job.state.progress = 0.7 + (i / RASTER_STEPS.length) * 0.25;
-          job.state.message = `深度优化中 (${i + 1}/${RASTER_STEPS.length})`;
-          sendEvent(jobId, job.state);
+      const srcForRaster = lastOutput || inputPath;
+      for (let i = 0; i < GS_RASTER_STEPS.length; i++) {
+        const step = GS_RASTER_STEPS[i];
+        job.state.progress = 0.7 + (i / GS_RASTER_STEPS.length) * 0.25;
+        job.state.message = `深度优化中 (${i + 1}/${GS_RASTER_STEPS.length})`;
+        sendEvent(jobId, job.state);
 
-          const tmpOut = `${outputPath}.r${i}.tmp`;
-          try {
-            await new Promise((resolve, reject) => {
-              const proc = spawn(RASTER_BINARY, [
-                lastOutput || inputPath, tmpOut,
-                String(step.dpi), String(step.quality), step.grayscale ? "1" : "0"
-              ]);
-              proc.on("close", (code) => code === 0 ? resolve() : reject(new Error(`raster failed ${code}`)));
-            });
-
-            const stat = await fsp.stat(tmpOut);
-            if (stat.size <= targetBytes || i === RASTER_STEPS.length - 1) {
-              await fsp.rename(tmpOut, outputPath);
-              resultBytes = stat.size;
-              ratio = resultBytes / originalBytes;
-              try { if (lastOutput && lastOutput !== inputPath) fs.unlinkSync(lastOutput); } catch {}
-              break;
-            }
-            try { fs.unlinkSync(tmpOut); } catch {}
-          } catch {
-            try { fs.unlinkSync(tmpOut); } catch {}
+        const tmpOut = `${outputPath}.r${i}.tmp`;
+        try {
+          await runGs(gsArgs(srcForRaster, tmpOut, step.dpi, step.jpegQ, step.grayscale));
+          const stat = await fsp.stat(tmpOut);
+          if (stat.size <= targetBytes || i === GS_RASTER_STEPS.length - 1) {
+            await fsp.rename(tmpOut, outputPath);
+            resultBytes = stat.size;
+            ratio = resultBytes / originalBytes;
+            try { if (srcForRaster !== inputPath) fs.unlinkSync(srcForRaster); } catch {}
+            break;
           }
+          try { fs.unlinkSync(tmpOut); } catch {}
+        } catch {
+          try { fs.unlinkSync(tmpOut); } catch {}
         }
       }
     }
@@ -305,8 +423,62 @@ async function handleApiRequest(req, res, url) {
   if (url.pathname === "/api/config" && req.method === "GET") {
     json(res, 200, {
       siteName: "PDF压缩神器",
-      maxUploadMB: 250
+      maxUploadMB: 250,
+      initialPoints: INITIAL_POINTS,
+      pointsPerCompress: POINTS_PER_COMPRESS
     });
+    return;
+  }
+
+  if (url.pathname === "/api/auth/anonymous" && req.method === "POST") {
+    const body = await parseJson(req);
+    const deviceId = body?.deviceId || crypto.randomBytes(16).toString("hex");
+
+    const user = await getOrCreateUser(deviceId);
+    const token = generateToken();
+    sessions.set(token, {
+      userId: user.id,
+      deviceId,
+      points: user.points,
+      email: user.email || null,
+      createdAt: Date.now()
+    });
+
+    json(res, 200, {
+      token,
+      user: {
+        id: user.id,
+        points: user.points,
+        email: user.email || null,
+        deviceId: user.device_id
+      }
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/points" && req.method === "GET") {
+    const session = await authenticate(req);
+    if (!session) {
+      sendError(res, 401, "UNAUTHORIZED", "请先登录");
+      return;
+    }
+
+    json(res, 200, { points: session.points });
+    return;
+  }
+
+  if (url.pathname === "/api/points/add" && req.method === "POST") {
+    const session = await authenticate(req);
+    if (!session) {
+      sendError(res, 401, "UNAUTHORIZED", "请先登录");
+      return;
+    }
+
+    const body = await parseJson(req);
+    const amount = parseInt(body?.amount || 10, 10);
+    const result = await addPoints(session, amount, body?.description);
+
+    json(res, 200, result);
     return;
   }
 
@@ -316,6 +488,23 @@ async function handleApiRequest(req, res, url) {
   }
 
   if (url.pathname === "/api/jobs" && req.method === "POST") {
+    let session = await authenticate(req);
+    let newToken = null;
+
+    if (!session) {
+      // Auto-create anonymous session so compression always works
+      const deviceId = crypto.randomBytes(16).toString("hex");
+      const user = await getOrCreateUser(deviceId);
+      newToken = generateToken();
+      session = { userId: user.id, deviceId, points: user.points, email: null, createdAt: Date.now() };
+      sessions.set(newToken, session);
+    }
+
+    const consumeResult = await consumePoints(session);
+    if (!consumeResult.success) {
+      sendError(res, 402, "INSUFFICIENT_POINTS", consumeResult.message);
+      return;
+    }
     const contentType = req.headers["content-type"] || "";
     const boundaryMatch = contentType.match(/boundary=(.+)$/);
     if (!boundaryMatch) {
@@ -370,6 +559,9 @@ async function handleApiRequest(req, res, url) {
 
     json(res, 200, {
       ...job.state,
+      points: consumeResult.points,
+      pointsRemaining: consumeResult.points,
+      ...(newToken ? { newToken } : {}),
       config: {
         siteName: "PDF压缩神器",
         maxUploadMB: 250
@@ -426,7 +618,178 @@ async function handleApiRequest(req, res, url) {
     return;
   }
 
+  if (url.pathname === "/api/user" && req.method === "GET") {
+    const session = await authenticate(req);
+    if (!session) {
+      sendError(res, 401, "UNAUTHORIZED", "请先登录");
+      return;
+    }
+    // Refresh points from DB
+    const user = await db.get("SELECT * FROM users WHERE id = ?", [session.userId]);
+    if (user) {
+      session.points = user.points;
+      session.email = user.email || null;
+    }
+    json(res, 200, { points: session.points, email: session.email || null, userId: session.userId });
+    return;
+  }
+
+  if (url.pathname === "/api/auth/send-code" && req.method === "POST") {
+    const body = await parseJson(req);
+    const email = (body?.email || "").trim().toLowerCase();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      sendError(res, 400, "INVALID_EMAIL", "请输入有效的邮箱地址");
+      return;
+    }
+    const existing = otpStore.get(email);
+    if (existing && existing.expires - Date.now() > 9 * 60 * 1000) {
+      sendError(res, 429, "TOO_FREQUENT", "发送过于频繁，请稍后再试");
+      return;
+    }
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    otpStore.set(email, { code, expires: Date.now() + 10 * 60 * 1000 });
+    console.log(`[OTP] ${email} → ${code}`);
+
+    if (resendClient) {
+      try {
+        await resendClient.emails.send({
+          from: RESEND_FROM,
+          to: [email],
+          subject: "PDF压缩神器 - 登录验证码",
+          html: `
+            <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px">
+              <h2 style="margin:0 0 16px;color:#14213d">您的验证码</h2>
+              <p style="color:#546079;margin:0 0 24px">用于 PDF压缩神器 邮箱绑定 / 登录，10分钟内有效。</p>
+              <div style="font-size:36px;font-weight:700;letter-spacing:0.2em;color:#c7512c;
+                          background:#fff8f4;border:2px solid #f0c4b0;border-radius:12px;
+                          padding:20px;text-align:center">${code}</div>
+              <p style="color:#546079;font-size:13px;margin:24px 0 0">如非本人操作，请忽略此邮件。</p>
+            </div>
+          `
+        });
+        json(res, 200, { ok: true, message: "验证码已发送到您的邮箱" });
+      } catch (emailErr) {
+        console.error("[email] send failed:", emailErr.message);
+        json(res, 500, { code: "EMAIL_FAILED", message: "邮件发送失败，请稍后重试" });
+      }
+    } else {
+      // Dev mode: no email service configured
+      json(res, 200, { ok: true, message: "验证码已发送（开发模式：请查看服务器控制台）" });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/auth/verify-code" && req.method === "POST") {
+    const body = await parseJson(req);
+    const email = (body?.email || "").trim().toLowerCase();
+    const code = (body?.code || "").trim();
+    if (!email || !code) {
+      sendError(res, 400, "MISSING_FIELDS", "请填写邮箱和验证码");
+      return;
+    }
+    const entry = otpStore.get(email);
+    if (!entry || entry.code !== code || Date.now() > entry.expires) {
+      sendError(res, 400, "INVALID_CODE", "验证码无效或已过期");
+      return;
+    }
+    otpStore.delete(email);
+
+    // Find or create user by email
+    let emailUser = await db.get("SELECT * FROM users WHERE email = ?", [email]);
+    const currentSession = await authenticate(req);
+
+    if (currentSession && !emailUser) {
+      // Bind email to existing anonymous account
+      await db.run("UPDATE users SET email = ? WHERE id = ?", [email, currentSession.userId]);
+      currentSession.email = email;
+      emailUser = await db.get("SELECT * FROM users WHERE id = ?", [currentSession.userId]);
+    } else if (!emailUser) {
+      // Create new user with this email
+      const deviceId = crypto.randomBytes(16).toString("hex");
+      const userId = crypto.randomBytes(16).toString("hex");
+      const now = Date.now();
+      await db.run(
+        "INSERT INTO users (id, device_id, email, points, created_at, last_login) VALUES (?, ?, ?, ?, ?, ?)",
+        [userId, deviceId, email, INITIAL_POINTS, now, now]
+      );
+      await db.run(
+        "INSERT INTO transactions (user_id, type, amount, description, created_at) VALUES (?, ?, ?, ?, ?)",
+        [userId, "gift", INITIAL_POINTS, "新用户赠送", now]
+      );
+      emailUser = await db.get("SELECT * FROM users WHERE id = ?", [userId]);
+    }
+
+    // Merge points if current anonymous session has more points
+    if (currentSession && currentSession.userId !== emailUser.id) {
+      if (currentSession.points > 0) {
+        const merged = emailUser.points + currentSession.points;
+        await db.run("UPDATE users SET points = ? WHERE id = ?", [merged, emailUser.id]);
+        await db.run(
+          "INSERT INTO transactions (user_id, type, amount, description, created_at) VALUES (?, ?, ?, ?, ?)",
+          [emailUser.id, "merge", currentSession.points, "匿名积分合并", Date.now()]
+        );
+        emailUser.points = merged;
+      }
+    }
+
+    const newToken = generateToken();
+    sessions.set(newToken, {
+      userId: emailUser.id,
+      deviceId: emailUser.device_id,
+      email: emailUser.email,
+      points: emailUser.points,
+      createdAt: Date.now()
+    });
+
+    json(res, 200, { token: newToken, points: emailUser.points, email: emailUser.email });
+    return;
+  }
+
+  if (url.pathname === "/api/redeem" && req.method === "POST") {
+    const session = await authenticate(req);
+    if (!session) {
+      sendError(res, 401, "UNAUTHORIZED", "请先登录");
+      return;
+    }
+    const body = await parseJson(req);
+    const code = (body?.code || "").trim().toUpperCase();
+    if (!code) {
+      sendError(res, 400, "MISSING_CODE", "请输入兑换码");
+      return;
+    }
+    const redeemEntry = await db.get("SELECT * FROM redeem_codes WHERE code = ?", [code]);
+    if (!redeemEntry) {
+      sendError(res, 400, "INVALID_CODE", "兑换码不存在");
+      return;
+    }
+    if (redeemEntry.used) {
+      sendError(res, 400, "ALREADY_USED", "该兑换码已被使用");
+      return;
+    }
+    await db.run(
+      "UPDATE redeem_codes SET used = 1, used_by = ?, used_at = ? WHERE code = ?",
+      [session.userId, Date.now(), code]
+    );
+    const result = await addPoints(session, redeemEntry.points, `兑换码: ${code}`);
+    json(res, 200, { ok: true, added: redeemEntry.points, points: result.points });
+    return;
+  }
+
   sendError(res, 404, "NOT_FOUND", "接口不存在");
+}
+
+async function parseJson(req) {
+  return new Promise((resolve) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      } catch {
+        resolve({});
+      }
+    });
+  });
 }
 
 function json(res, statusCode, payload, extraHeaders = {}) {
@@ -497,7 +860,9 @@ const server = http.createServer(async (req, res) => {
 });
 
 async function main() {
-  await buildSwiftBinaries();
+  await checkGhostscript();
+  await fsp.mkdir(path.dirname(DB_PATH), { recursive: true });
+  await initDb();
   server.listen(PORT, HOST, () => {
     console.log(`PDF compress web app running at http://${HOST}:${PORT}`);
   });

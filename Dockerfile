@@ -9,7 +9,7 @@ WORKDIR /app
 
 # Install dependencies first (cached layer)
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 
 # Copy source code
 COPY . .

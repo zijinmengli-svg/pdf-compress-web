@@ -118,6 +118,18 @@ async function initDb() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
+
+    CREATE TABLE IF NOT EXISTS ad_rewards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      slot_id TEXT NOT NULL DEFAULT 'slot_reward',
+      points_granted INTEGER NOT NULL DEFAULT 10,
+      watch_seconds INTEGER,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ad_rewards_user_date
+      ON ad_rewards(user_id, created_at);
   `);
 
   // migration: add email column if not present
@@ -485,6 +497,54 @@ async function handleApiRequest(req, res, url) {
 
   if (url.pathname === "/api/track" && req.method === "POST") {
     json(res, 200, { ok: true });
+    return;
+  }
+
+  if (url.pathname === "/api/ads/reward" && req.method === "POST") {
+    const session = await authenticate(req);
+    if (!session) {
+      sendError(res, 401, "UNAUTHORIZED", "请先登录");
+      return;
+    }
+
+    const body = await parseJson(req);
+    const watchSeconds = Number(body?.watch_seconds || 0);
+    const slotId = body?.slot_id || "slot_reward";
+
+    // 服务端校验：至少观看10秒
+    if (watchSeconds < 10) {
+      sendError(res, 400, "WATCH_TOO_SHORT", "观看时间不足");
+      return;
+    }
+
+    // 每日领取上限：最多10次（100积分）
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayStartTs = todayStart.getTime();
+
+    const todayCount = await db.get(
+      "SELECT COUNT(*) as cnt FROM ad_rewards WHERE user_id = ? AND created_at >= ?",
+      [session.userId, todayStartTs]
+    );
+
+    if (todayCount.cnt >= 10) {
+      sendError(res, 429, "REWARD_LIMIT_EXCEEDED", "今日领取次数已达上限（10次）");
+      return;
+    }
+
+    const REWARD_POINTS = 10;
+    const result = await addPoints(session, REWARD_POINTS, "激励广告奖励");
+
+    await db.run(
+      "INSERT INTO ad_rewards (user_id, slot_id, points_granted, watch_seconds, created_at) VALUES (?, ?, ?, ?, ?)",
+      [session.userId, slotId, REWARD_POINTS, watchSeconds, Date.now()]
+    );
+
+    json(res, 200, {
+      success: true,
+      points_added: REWARD_POINTS,
+      new_balance: result.points
+    });
     return;
   }
 

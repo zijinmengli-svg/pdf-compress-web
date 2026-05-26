@@ -463,9 +463,9 @@ const AdAdapter = {
    * mock 实现：保持灰色占位框
    * 真实接入时：在此处插入对应 SDK 初始化代码
    */
-  load(container) {
+  load(slotId, container) {
     if (this.provider === 'mock') {
-      container.textContent = '广告（测试模式）';
+      container.textContent = '广告加载中...';
       return Promise.resolve();
     }
     // TODO: 接入真实广告 SDK
@@ -519,7 +519,7 @@ function openRewardAdModal() {
   rewardAdModal.classList.add('is-open');
 
   // 加载并播放广告
-  AdAdapter.load(adSlotContainer).then(() => {
+  AdAdapter.load('slot_reward', adSlotContainer).then(() => {
     // 给浏览器一帧时间渲染，再启动进度条动画
     requestAnimationFrame(() => {
       adProgressBar.style.transition = 'width 1s linear';

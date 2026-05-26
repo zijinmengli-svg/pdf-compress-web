@@ -27,7 +27,7 @@ try {
 // Optional Resend email integration
 let resendClient = null;
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const RESEND_FROM = process.env.RESEND_FROM || "PDF压缩神器 <noreply@resend.dev>";
+const RESEND_FROM = process.env.RESEND_FROM || "TinyPDF <noreply@resend.dev>";
 if (RESEND_API_KEY && !RESEND_API_KEY.startsWith("your_")) {
   try {
     const { Resend } = require("resend");
@@ -422,10 +422,11 @@ async function handleMultipart(req, boundary, maxSize) {
 async function handleApiRequest(req, res, url) {
   if (url.pathname === "/api/config" && req.method === "GET") {
     json(res, 200, {
-      siteName: "PDF压缩神器",
+      siteName: "TinyPDF",
       maxUploadMB: 250,
       initialPoints: INITIAL_POINTS,
-      pointsPerCompress: POINTS_PER_COMPRESS
+      pointsPerCompress: POINTS_PER_COMPRESS,
+      adProvider: "mock"
     });
     return;
   }
@@ -563,7 +564,7 @@ async function handleApiRequest(req, res, url) {
       pointsRemaining: consumeResult.points,
       ...(newToken ? { newToken } : {}),
       config: {
-        siteName: "PDF压缩神器",
+        siteName: "TinyPDF",
         maxUploadMB: 250
       }
     });
@@ -655,11 +656,11 @@ async function handleApiRequest(req, res, url) {
         await resendClient.emails.send({
           from: RESEND_FROM,
           to: [email],
-          subject: "PDF压缩神器 - 登录验证码",
+          subject: "TinyPDF - 登录验证码",
           html: `
             <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px">
               <h2 style="margin:0 0 16px;color:#14213d">您的验证码</h2>
-              <p style="color:#546079;margin:0 0 24px">用于 PDF压缩神器 邮箱绑定 / 登录，10分钟内有效。</p>
+              <p style="color:#546079;margin:0 0 24px">用于 TinyPDF 邮箱绑定 / 登录，10分钟内有效。</p>
               <div style="font-size:36px;font-weight:700;letter-spacing:0.2em;color:#c7512c;
                           background:#fff8f4;border:2px solid #f0c4b0;border-radius:12px;
                           padding:20px;text-align:center">${code}</div>

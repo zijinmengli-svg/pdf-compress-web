@@ -1,4 +1,4 @@
-# PDF压缩神器
+# TinyPDF
 User-agent: *
 Allow: /
 Disallow: /admin

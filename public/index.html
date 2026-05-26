@@ -89,27 +89,17 @@
         <!-- 积分不足提示 -->
         <section class="insufficient-card" id="insufficient-card" hidden>
           <h2>积分不足</h2>
-          <p id="insufficient-msg">每次压缩消耗 10 积分，当前积分不足，请充值后继续使用。</p>
-          <p class="muted-text">充值规则：1元 = 10积分</p>
-          <div class="redeem-row" style="margin-top:16px">
-            <input type="text" id="redeem-input" placeholder="输入兑换码" autocomplete="off" />
+          <p id="insufficient-msg">每次压缩需要 10 积分，当前积分不足。<br>看一个广告可获得 10 积分（1次压缩机会）。</p>
+          <div class="action-row" style="margin-top:20px;gap:12px">
+            <button type="button" class="btn-secondary" id="insufficient-dismiss-btn">知道了</button>
+            <button type="button" id="watch-ad-btn">获取更多积分</button>
+          </div>
+          <div class="redeem-row" style="margin-top:20px">
+            <input type="text" id="redeem-input" placeholder="或输入兑换码" autocomplete="off" />
             <button type="button" id="redeem-btn">使用兑换码</button>
           </div>
           <p class="field-error" id="redeem-error" style="margin-top:8px"></p>
           <p class="modal-success" id="redeem-success" style="margin-top:8px"></p>
-          <p style="margin-top:16px;color:var(--muted);font-size:14px">如需充值请联系客服：<a href="mailto:zijinnmengli@gmail.com">zijinnmengli@gmail.com</a></p>
-        </section>
-
-        <!-- 旧付费卡（billingEnabled 时显示） -->
-        <section class="pay-card" id="pay-card" hidden>
-          <h2>免费次数已用完</h2>
-          <p id="pay-message"></p>
-          <div id="package-list" class="package-grid"></div>
-          <div id="payment-list" class="payment-list"></div>
-          <p class="support-copy" id="support-copy"></p>
-          <div class="action-row">
-            <button id="paid-button" type="button">我已支付，继续本次压缩</button>
-          </div>
         </section>
       </section>
     </main>
@@ -155,6 +145,39 @@
         </div>
 
         <p class="modal-tip">验证码10分钟有效 · 开发环境下验证码打印到服务器控制台</p>
+      </div>
+    </div>
+
+    <!-- 激励广告弹窗 -->
+    <div id="reward-ad-modal" class="modal-overlay">
+      <div class="modal-box">
+        <h2>观看广告获取积分</h2>
+        <p style="color:var(--muted);font-size:14px;margin:8px 0 16px">观看完成后可领取 10 积分（1次压缩机会）</p>
+
+        <!-- 广告内容区域（mock：灰色占位；接入真实广告时替换此区块） -->
+        <div id="ad-slot-container" style="
+          width:300px;height:250px;margin:0 auto 16px;
+          background:#f3f4f6;border:1px dashed #d1d5db;border-radius:12px;
+          display:flex;align-items:center;justify-content:center;
+          color:#9ca3af;font-size:14px;
+        ">
+          广告加载中...
+        </div>
+
+        <!-- 进度条 -->
+        <div style="background:#e5e7eb;border-radius:4px;height:6px;margin-bottom:8px;overflow:hidden">
+          <div id="ad-progress-bar" style="height:100%;width:0%;background:#374151;border-radius:4px;transition:width 1s linear"></div>
+        </div>
+        <p id="ad-countdown-text" style="text-align:center;font-size:13px;color:var(--muted);margin-bottom:16px">
+          请观看广告，5 秒后可领取...
+        </p>
+
+        <p class="modal-error" id="ad-reward-error"></p>
+
+        <div class="action-row">
+          <button type="button" id="ad-claim-btn" disabled>请观看广告...</button>
+        </div>
+        <p class="modal-tip" style="margin-top:8px">每日最多可领取 10 次（100 积分）</p>
       </div>
     </div>
 

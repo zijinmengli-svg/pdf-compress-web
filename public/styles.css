@@ -790,3 +790,13 @@ th {
 #logout-btn:hover {
   background: #fef2f2;
 }
+
+/* 次要按钮（用于弹窗中的"知道了"等取消操作） */
+.btn-secondary {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border, #e5e7eb);
+}
+.btn-secondary:hover {
+  background: var(--surface-2, #f3f4f6);
+}

@@ -508,43 +508,60 @@ async function handleApiRequest(req, res, url) {
     }
 
     const body = await parseJson(req);
-    const watchSeconds = Number(body?.watch_seconds || 0);
-    const slotId = body?.slot_id || "slot_reward";
 
-    // 服务端校验：至少观看10秒
-    if (watchSeconds < 10) {
+    // Fix 1: Use parseInt to prevent NaN bypass (Number("abc") === NaN, NaN < 10 is false)
+    const watchSeconds = parseInt(body?.watch_seconds, 10);
+    if (isNaN(watchSeconds) || watchSeconds < 10) {
       sendError(res, 400, "WATCH_TOO_SHORT", "观看时间不足");
       return;
     }
 
-    // 每日领取上限：最多10次（100积分）
+    // Fix 4: Allowlist slot_id to prevent arbitrary values
+    const VALID_SLOT_IDS = new Set(["slot_reward"]);
+    const rawSlotId = body?.slot_id;
+    const slotId = VALID_SLOT_IDS.has(rawSlotId) ? rawSlotId : "slot_reward";
+
+    // Fix 2+3: Wrap check-and-act in a SQLite IMMEDIATE transaction to prevent
+    // TOCTOU race; INSERT audit record before addPoints so no orphaned points on failure.
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayStartTs = todayStart.getTime();
 
-    const todayCount = await db.get(
-      "SELECT COUNT(*) as cnt FROM ad_rewards WHERE user_id = ? AND created_at >= ?",
-      [session.userId, todayStartTs]
-    );
+    await db.run("BEGIN IMMEDIATE");
+    try {
+      const todayCount = await db.get(
+        "SELECT COUNT(*) as cnt FROM ad_rewards WHERE user_id = ? AND created_at >= ?",
+        [session.userId, todayStartTs]
+      );
 
-    if (todayCount.cnt >= 10) {
-      sendError(res, 429, "REWARD_LIMIT_EXCEEDED", "今日领取次数已达上限（10次）");
-      return;
+      if (todayCount.cnt >= 10) {
+        await db.run("ROLLBACK");
+        sendError(res, 429, "REWARD_LIMIT_EXCEEDED", "今日领取次数已达上限（10次）");
+        return;
+      }
+
+      const REWARD_POINTS = 10;
+      const now = Date.now();
+
+      // INSERT first (audit trail), then addPoints
+      await db.run(
+        "INSERT INTO ad_rewards (user_id, slot_id, points_granted, watch_seconds, created_at) VALUES (?, ?, ?, ?, ?)",
+        [session.userId, slotId, REWARD_POINTS, watchSeconds, now]
+      );
+
+      const result = await addPoints(session, REWARD_POINTS, "激励广告奖励");
+
+      await db.run("COMMIT");
+
+      json(res, 200, {
+        success: true,
+        points_added: REWARD_POINTS,
+        new_balance: result.points
+      });
+    } catch (err) {
+      try { await db.run("ROLLBACK"); } catch {}
+      throw err;
     }
-
-    const REWARD_POINTS = 10;
-    const result = await addPoints(session, REWARD_POINTS, "激励广告奖励");
-
-    await db.run(
-      "INSERT INTO ad_rewards (user_id, slot_id, points_granted, watch_seconds, created_at) VALUES (?, ?, ?, ?, ?)",
-      [session.userId, slotId, REWARD_POINTS, watchSeconds, Date.now()]
-    );
-
-    json(res, 200, {
-      success: true,
-      points_added: REWARD_POINTS,
-      new_balance: result.points
-    });
     return;
   }
 

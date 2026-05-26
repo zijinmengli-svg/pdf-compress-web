@@ -92,6 +92,10 @@ function renderConfigBar() {
 async function fetchConfig() {
   const response = await fetch("/api/config");
   appConfig = await response.json();
+  // 同步广告适配器平台设置
+  if (appConfig?.adProvider) {
+    AdAdapter.provider = appConfig.adProvider;
+  }
   renderConfigBar();
 }
 
@@ -446,6 +450,158 @@ document.getElementById("redeem-btn").addEventListener("click", async () => {
   } catch (err) {
     errEl.textContent = "网络错误，请稍后重试";
   }
+});
+
+// ---- 激励广告系统 ----
+
+// 广告适配器（provider 由 /api/config 下发的 adProvider 决定）
+const AdAdapter = {
+  provider: 'mock', // 'mock' | 'adsense' | 'monetag' | 'adsterra'
+
+  /**
+   * 在 container 中加载广告内容
+   * mock 实现：保持灰色占位框
+   * 真实接入时：在此处插入对应 SDK 初始化代码
+   */
+  load(container) {
+    if (this.provider === 'mock') {
+      container.textContent = '广告（测试模式）';
+      return Promise.resolve();
+    }
+    // TODO: 接入真实广告 SDK
+    // if (this.provider === 'adsense') { ... }
+    // if (this.provider === 'monetag') { ... }
+    // if (this.provider === 'adsterra') { ... }
+    return Promise.resolve();
+  },
+
+  /**
+   * 开始播放/展示广告，返回 Promise
+   * mock：5秒后 resolve（通过 onTick 回调每秒通知剩余秒数）
+   * 真实接入时：监听 SDK 的 onAdRewarded/onComplete 回调后 resolve
+   */
+  play(onTick) {
+    if (this.provider === 'mock') {
+      return new Promise((resolve) => {
+        let remaining = 5;
+        onTick(remaining);
+        const timer = setInterval(() => {
+          remaining--;
+          onTick(remaining);
+          if (remaining <= 0) {
+            clearInterval(timer);
+            resolve();
+          }
+        }, 1000);
+      });
+    }
+    // TODO: 真实 SDK 播放逻辑
+    return Promise.resolve();
+  }
+};
+
+// 激励广告弹窗元素
+const rewardAdModal = document.getElementById('reward-ad-modal');
+const adSlotContainer = document.getElementById('ad-slot-container');
+const adProgressBar = document.getElementById('ad-progress-bar');
+const adCountdownText = document.getElementById('ad-countdown-text');
+const adClaimBtn = document.getElementById('ad-claim-btn');
+const adRewardError = document.getElementById('ad-reward-error');
+
+function openRewardAdModal() {
+  // 重置状态
+  adClaimBtn.disabled = true;
+  adClaimBtn.textContent = '请观看广告...';
+  adProgressBar.style.width = '0%';
+  adProgressBar.style.transition = 'none';
+  adCountdownText.textContent = '请观看广告，5 秒后可领取...';
+  adRewardError.textContent = '';
+  rewardAdModal.classList.add('is-open');
+
+  // 加载并播放广告
+  AdAdapter.load(adSlotContainer).then(() => {
+    // 给浏览器一帧时间渲染，再启动进度条动画
+    requestAnimationFrame(() => {
+      adProgressBar.style.transition = 'width 1s linear';
+      AdAdapter.play((remaining) => {
+        const elapsed = 5 - remaining;
+        adProgressBar.style.width = `${(elapsed / 5) * 100}%`;
+        if (remaining > 0) {
+          adCountdownText.textContent = `请观看广告，${remaining} 秒后可领取...`;
+        } else {
+          adCountdownText.textContent = '广告观看完成，点击下方按钮领取积分';
+          adClaimBtn.disabled = false;
+          adClaimBtn.textContent = '领取积分';
+        }
+      });
+    });
+  });
+}
+
+function closeRewardAdModal() {
+  rewardAdModal.classList.remove('is-open');
+}
+
+// 关闭模态框：点击遮罩
+rewardAdModal.addEventListener('click', (e) => {
+  if (e.target === rewardAdModal) closeRewardAdModal();
+});
+
+// 领取积分按钮
+adClaimBtn.addEventListener('click', async () => {
+  adClaimBtn.disabled = true;
+  adClaimBtn.textContent = '领取中...';
+  adRewardError.textContent = '';
+
+  try {
+    const token = await ensureSession();
+    const res = await fetch('/api/ads/reward', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ slot_id: 'slot_reward', watch_seconds: 5 })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      adRewardError.textContent = data.message || '领取失败，请稍后重试';
+      adClaimBtn.disabled = false;
+      adClaimBtn.textContent = '重试';
+      return;
+    }
+
+    // 更新积分显示
+    updatePointsDisplay(data.new_balance);
+
+    // 关闭广告弹窗和积分不足卡片
+    closeRewardAdModal();
+    document.getElementById('insufficient-card').hidden = true;
+
+    // 自动重新触发压缩
+    const file = fileInput.files?.[0];
+    if (file && targetInput.value.trim()) {
+      submitButton.click();
+    }
+  } catch (err) {
+    adRewardError.textContent = '网络错误，请稍后重试';
+    adClaimBtn.disabled = false;
+    adClaimBtn.textContent = '重试';
+  }
+});
+
+// insufficient-card 按钮
+document.getElementById('insufficient-dismiss-btn').addEventListener('click', () => {
+  document.getElementById('insufficient-card').hidden = true;
+});
+
+document.getElementById('watch-ad-btn').addEventListener('click', () => {
+  // 从 appConfig 中同步广告平台设置
+  if (appConfig?.adProvider) {
+    AdAdapter.provider = appConfig.adProvider;
+  }
+  openRewardAdModal();
 });
 
 // ---- Init ----

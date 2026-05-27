@@ -561,7 +561,7 @@ adClaimBtn.addEventListener('click', async () => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ slot_id: 'slot_reward', watch_seconds: 5 })
+      body: JSON.stringify({ slot_id: 'slot_reward', watch_seconds: 10 })
     });
     const data = await res.json();
 

@@ -86,21 +86,6 @@
           </div>
         </section>
 
-        <!-- 积分不足提示 -->
-        <section class="insufficient-card" id="insufficient-card" hidden>
-          <h2>积分不足</h2>
-          <p id="insufficient-msg">每次压缩需要 10 积分，当前积分不足。<br>看一个广告可获得 10 积分（1次压缩机会）。</p>
-          <div class="action-row" style="margin-top:20px;gap:12px">
-            <button type="button" class="btn-secondary" id="insufficient-dismiss-btn">知道了</button>
-            <button type="button" id="watch-ad-btn">获取更多积分</button>
-          </div>
-          <div class="redeem-row" style="margin-top:20px">
-            <input type="text" id="redeem-input" placeholder="或输入兑换码" autocomplete="off" />
-            <button type="button" id="redeem-btn">使用兑换码</button>
-          </div>
-          <p class="field-error" id="redeem-error" style="margin-top:8px"></p>
-          <p class="modal-success" id="redeem-success" style="margin-top:8px"></p>
-        </section>
       </section>
     </main>
 
@@ -148,9 +133,32 @@
       </div>
     </div>
 
+    <!-- 积分不足弹窗 -->
+    <div id="insufficient-modal" class="modal-overlay">
+      <div class="modal-box">
+        <button type="button" class="modal-close" id="insufficient-modal-close">×</button>
+        <h2>积分不足</h2>
+        <p style="color:var(--muted);font-size:14px;margin:8px 0 20px">
+          每次压缩需要 10 积分，当前积分不足。<br>
+          看一个广告可获得 10 积分（1次压缩机会）。
+        </p>
+        <div class="action-row" style="gap:12px;justify-content:space-between;flex-wrap:nowrap">
+          <button type="button" class="btn-secondary" id="insufficient-dismiss-btn" style="flex:1;min-width:0">知道了</button>
+          <button type="button" id="watch-ad-btn" style="flex:2;min-width:0">获取更多积分</button>
+        </div>
+        <div class="redeem-row" style="margin-top:16px">
+          <input type="text" id="redeem-input" placeholder="或输入兑换码" autocomplete="off" />
+          <button type="button" id="redeem-btn">使用兑换码</button>
+        </div>
+        <p class="field-error" id="redeem-error" style="margin-top:8px"></p>
+        <p class="modal-success" id="redeem-success" style="margin-top:8px"></p>
+      </div>
+    </div>
+
     <!-- 激励广告弹窗 -->
     <div id="reward-ad-modal" class="modal-overlay">
       <div class="modal-box">
+        <button type="button" class="modal-close" id="ad-modal-close">×</button>
         <h2>观看广告获取积分</h2>
         <p style="color:var(--muted);font-size:14px;margin:8px 0 16px">观看完成后可领取 10 积分（1次压缩机会）</p>
 
@@ -174,7 +182,7 @@
 
         <p class="modal-error" id="ad-reward-error"></p>
 
-        <div class="action-row">
+        <div class="action-row" style="justify-content:center">
           <button type="button" id="ad-claim-btn" disabled>请观看广告...</button>
         </div>
         <p class="modal-tip" style="margin-top:8px">每日最多可领取 10 次（100 积分）</p>

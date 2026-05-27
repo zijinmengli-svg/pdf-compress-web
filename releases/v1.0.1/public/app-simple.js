@@ -198,7 +198,7 @@ async function submitCompression(body) {
     submitButton.disabled = false;
     submitButton.textContent = "开始压缩";
     if (payload.code === "INSUFFICIENT_POINTS") {
-      document.getElementById("insufficient-card").hidden = false;
+      document.getElementById("insufficient-modal").classList.add("is-open");
       return;
     }
     return;
@@ -213,7 +213,7 @@ async function submitCompression(body) {
     saveToken(payload.newToken);
   }
 
-  document.getElementById("insufficient-card").hidden = true;
+  document.getElementById("insufficient-modal").classList.remove("is-open");
 
   if (typeof payload.pointsRemaining === "number") {
     updatePointsDisplay(payload.pointsRemaining);
@@ -265,7 +265,7 @@ form.addEventListener("submit", async (event) => {
 
   submitButton.disabled = true;
   submitButton.textContent = "压缩中...";
-  document.getElementById("insufficient-card").hidden = true;
+  document.getElementById("insufficient-modal").classList.remove("is-open");
   downloadRow.hidden = true;
   setStatus({
     status: "processing",
@@ -446,7 +446,7 @@ document.getElementById("redeem-btn").addEventListener("click", async () => {
     okEl.textContent = `兑换成功！获得 ${data.added} 积分，当前积分：${data.points}`;
     updatePointsDisplay(data.points);
     document.getElementById("redeem-input").value = "";
-    document.getElementById("insufficient-card").hidden = true;
+    document.getElementById("insufficient-modal").classList.remove("is-open");
   } catch (err) {
     errEl.textContent = "网络错误，请稍后重试";
   }
@@ -575,9 +575,9 @@ adClaimBtn.addEventListener('click', async () => {
     // 更新积分显示
     updatePointsDisplay(data.new_balance);
 
-    // 关闭广告弹窗和积分不足卡片
+    // 关闭广告弹窗和积分不足弹窗
     closeRewardAdModal();
-    document.getElementById('insufficient-card').hidden = true;
+    document.getElementById('insufficient-modal').classList.remove('is-open');
 
     // 自动重新触发压缩
     const file = fileInput.files?.[0];
@@ -591,17 +591,27 @@ adClaimBtn.addEventListener('click', async () => {
   }
 });
 
-// insufficient-card 按钮
+// 积分不足弹窗按钮
+document.getElementById('insufficient-modal-close').addEventListener('click', () => {
+  document.getElementById('insufficient-modal').classList.remove('is-open');
+});
+document.getElementById('insufficient-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('insufficient-modal'))
+    document.getElementById('insufficient-modal').classList.remove('is-open');
+});
 document.getElementById('insufficient-dismiss-btn').addEventListener('click', () => {
-  document.getElementById('insufficient-card').hidden = true;
+  document.getElementById('insufficient-modal').classList.remove('is-open');
+});
+document.getElementById('watch-ad-btn').addEventListener('click', () => {
+  // 关闭积分不足弹窗，切换到广告弹窗
+  document.getElementById('insufficient-modal').classList.remove('is-open');
+  if (appConfig?.adProvider) AdAdapter.provider = appConfig.adProvider;
+  openRewardAdModal();
 });
 
-document.getElementById('watch-ad-btn').addEventListener('click', () => {
-  // 从 appConfig 中同步广告平台设置
-  if (appConfig?.adProvider) {
-    AdAdapter.provider = appConfig.adProvider;
-  }
-  openRewardAdModal();
+// 广告弹窗 X 关闭（倒计时中退出不给积分）
+document.getElementById('ad-modal-close').addEventListener('click', () => {
+  closeRewardAdModal();
 });
 
 // ---- Init ----

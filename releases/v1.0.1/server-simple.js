@@ -393,6 +393,15 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     job.state.message = "压缩失败";
     job.state.error = error.message;
     sendEvent(jobId, job.state);
+
+    // Refund points on compression failure
+    if (job.session) {
+      try {
+        await addPoints(job.session, POINTS_PER_COMPRESS, "压缩失败退款");
+      } catch (refundErr) {
+        console.error("[refund] failed to refund points:", refundErr.message);
+      }
+    }
   }
 }
 
@@ -617,6 +626,7 @@ async function handleApiRequest(req, res, url) {
       outputPath,
       originalName: pdfPart.filename,
       targetBytes: parseSizeToBytes(targetMB),
+      session,   // stored for refund on failure
       state: {
         id: jobId,
         status: "processing",

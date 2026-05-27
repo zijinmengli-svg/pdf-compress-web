@@ -791,6 +791,11 @@ th {
   background: #fef2f2;
 }
 
+/* 弹窗内单按钮居中（如激励广告弹窗的"领取积分"） */
+.modal-box .action-row {
+  justify-content: center;
+}
+
 /* 次要按钮（用于弹窗中的"知道了"等取消操作） */
 .btn-secondary {
   background: transparent;

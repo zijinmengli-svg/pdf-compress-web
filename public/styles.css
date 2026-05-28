@@ -530,15 +530,13 @@ th {
   }
 }
 
-/* Points bar in topbar */
-.points-bar {
+/* Usage counter in topbar */
+.usage-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 
-.points-badge {
+.usage-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -549,12 +547,6 @@ th {
   font-size: 14px;
   font-weight: 600;
   color: var(--ink);
-}
-
-.points-icon {
-  color: var(--brand);
-  font-size: 16px;
-  line-height: 1;
 }
 
 .points-num {

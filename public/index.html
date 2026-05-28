@@ -7,19 +7,14 @@
     <meta name="keywords" content="PDF压缩,压缩PDF,PDF减小大小,PDF在线压缩,免费PDF压缩" />
     <meta name="author" content="TinyPDF" />
     <meta name="robots" content="index, follow" />
-
-    <!-- Open Graph -->
     <meta property="og:title" content="TinyPDF - 精准压缩 PDF" />
     <meta property="og:description" content="精准压缩PDF到指定大小，免费在线使用，无需安装。" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://example.com/" />
     <meta property="og:locale" content="zh_CN" />
-
-    <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="TinyPDF - 精准压缩 PDF" />
     <meta name="twitter:description" content="精准压缩PDF到指定大小，免费在线使用，无需安装。" />
-
     <title>TinyPDF - 精准压缩 PDF | 免费在线工具</title>
     <link rel="stylesheet" href="/styles.css" />
     <link rel="canonical" href="https://example.com/" />
@@ -28,12 +23,10 @@
     <main class="shell">
       <header class="topbar">
         <span class="eyebrow">TinyPDF</span>
-        <div class="points-bar">
-          <div class="points-badge" id="points-display" aria-live="polite">
-            <span class="points-icon">⬡</span>
-            积分：<span class="points-num" id="points-value">--</span>
-          </div>
-          <button type="button" class="login-btn" id="login-btn">绑定邮箱 / 登录</button>
+        <div class="usage-bar">
+          <span class="usage-badge" id="usage-display" aria-live="polite">
+            今日剩余 <span id="usage-remaining">--</span>/3 次
+          </span>
         </div>
       </header>
 
@@ -93,7 +86,7 @@
       <div class="footer-inner">
         <div>
           <strong>客服邮箱：</strong>
-          <a id="support-email-link" href="mailto:zijinnmengli@gmail.com">zijinnmengli@gmail.com</a>
+          <a href="mailto:zijinnmengli@gmail.com">zijinnmengli@gmail.com</a>
         </div>
         <nav class="footer-links">
           <a href="/privacy">隐私政策</a>
@@ -104,65 +97,16 @@
       </div>
     </footer>
 
-    <!-- 登录 / 邮箱绑定弹窗 -->
-    <div id="login-modal" class="modal-overlay">
-      <div class="modal-box">
-        <button type="button" class="modal-close" id="modal-close">×</button>
-        <h2>绑定邮箱 / 登录</h2>
-        <p style="color:var(--muted);font-size:14px;margin:8px 0 20px">绑定邮箱后可在多设备同步积分，新账号赠送 10 积分。</p>
-
-        <div class="field" style="margin-bottom:14px">
-          <label for="modal-email" style="font-size:14px;font-weight:600">邮箱地址</label>
-          <div class="inline-field" style="margin-top:6px">
-            <input type="email" id="modal-email" placeholder="your@email.com" autocomplete="email" />
-          </div>
-        </div>
-
-        <div class="code-row">
-          <input type="text" id="modal-code" placeholder="6位验证码" maxlength="6" inputmode="numeric" />
-          <button type="button" class="send-code-btn" id="send-code-btn">发送验证码</button>
-        </div>
-
-        <p class="modal-error" id="modal-error"></p>
-
-        <div class="action-row" style="margin-top:20px">
-          <button type="button" id="verify-btn">确认登录 / 绑定</button>
-        </div>
-
-        <p class="modal-tip">验证码10分钟有效 · 开发环境下验证码打印到服务器控制台</p>
-      </div>
-    </div>
-
-    <!-- 积分不足弹窗 -->
-    <div id="insufficient-modal" class="modal-overlay">
-      <div class="modal-box">
-        <button type="button" class="modal-close" id="insufficient-modal-close">×</button>
-        <h2>积分不足</h2>
-        <p style="color:var(--muted);font-size:14px;margin:8px 0 20px">
-          每次压缩需要 10 积分，当前积分不足。<br>
-          看一个广告可获得 10 积分（1次压缩机会）。
-        </p>
-        <div class="action-row" style="gap:12px;justify-content:space-between;flex-wrap:nowrap">
-          <button type="button" class="btn-secondary" id="insufficient-dismiss-btn" style="flex:1;min-width:0">知道了</button>
-          <button type="button" id="watch-ad-btn" style="flex:2;min-width:0">获取更多积分</button>
-        </div>
-        <div class="redeem-row" style="margin-top:16px">
-          <input type="text" id="redeem-input" placeholder="或输入兑换码" autocomplete="off" />
-          <button type="button" id="redeem-btn">使用兑换码</button>
-        </div>
-        <p class="field-error" id="redeem-error" style="margin-top:8px"></p>
-        <p class="modal-success" id="redeem-success" style="margin-top:8px"></p>
-      </div>
-    </div>
-
-    <!-- 激励广告弹窗 -->
-    <div id="reward-ad-modal" class="modal-overlay">
+    <!-- 广告解锁弹窗：每日次数用完后弹出 -->
+    <div id="ad-modal" class="modal-overlay">
       <div class="modal-box">
         <button type="button" class="modal-close" id="ad-modal-close">×</button>
-        <h2>观看广告获取积分</h2>
-        <p style="color:var(--muted);font-size:14px;margin:8px 0 16px">观看完成后可领取 10 积分（1次压缩机会）</p>
+        <h2>今日 3 次免费压缩已用完</h2>
+        <p style="color:var(--muted);font-size:14px;margin:8px 0 16px">
+          观看以下内容后可解锁 1 次压缩，或明天再来（每日自动重置）。
+        </p>
 
-        <!-- 广告内容区域（mock：灰色占位；接入真实广告时替换此区块） -->
+        <!-- 广告内容区（mock 占位；上线时替换为真实广告代码） -->
         <div id="ad-slot-container" style="
           width:300px;height:250px;margin:0 auto 16px;
           background:#f3f4f6;border:1px dashed #d1d5db;border-radius:12px;
@@ -172,23 +116,25 @@
           广告加载中...
         </div>
 
-        <!-- 进度条 -->
+        <!-- 倒计时进度条 -->
         <div style="background:#e5e7eb;border-radius:4px;height:6px;margin-bottom:8px;overflow:hidden">
           <div id="ad-progress-bar" style="height:100%;width:0%;background:#374151;border-radius:4px;transition:width 1s linear"></div>
         </div>
         <p id="ad-countdown-text" style="text-align:center;font-size:13px;color:var(--muted);margin-bottom:16px">
-          请观看广告，5 秒后可领取...
+          请观看广告，5 秒后可继续...
         </p>
 
-        <p class="modal-error" id="ad-reward-error"></p>
+        <p class="modal-error" id="ad-modal-error"></p>
 
-        <div class="action-row" style="justify-content:center">
-          <button type="button" id="ad-claim-btn" disabled>请观看广告...</button>
+        <div class="action-row" style="justify-content:center;gap:12px;flex-wrap:nowrap">
+          <button type="button" class="btn-secondary" id="ad-tomorrow-btn" style="flex:1">明天再来</button>
+          <button type="button" id="ad-claim-btn" disabled style="flex:2">请观看广告...</button>
         </div>
-        <p class="modal-tip" style="margin-top:8px">每日最多可领取 10 次（100 积分）</p>
+
+        <p class="modal-tip" style="margin-top:8px">每日最多可通过广告额外获得 10 次</p>
       </div>
     </div>
 
-    <script src="/app-simple.js?v=1.0.1" defer></script>
+    <script src="/app-simple.js?v=1.1.0" defer></script>
   </body>
 </html>

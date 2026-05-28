@@ -1,40 +1,41 @@
 // ─── DOM 引用 ───────────────────────────────────────────────────────────────
-const form          = document.getElementById("compress-form");
-const fileInput     = document.getElementById("pdf");
-const dropzone      = document.getElementById("dropzone");
-const targetInput   = document.getElementById("targetMB");
-const fileMeta      = document.getElementById("file-meta");
-const fileError     = document.getElementById("file-error");
-const targetError   = document.getElementById("target-error");
-const statusCard    = document.getElementById("status-card");
-const statusTitle   = document.getElementById("status-title");
-const statusPercent = document.getElementById("status-percent");
-const progressFill  = document.getElementById("progress-fill");
-const statusMessage = document.getElementById("status-message");
-const metrics       = document.getElementById("metrics");
-const submitButton  = document.getElementById("submit-button");
-const downloadRow   = document.getElementById("download-row");
+const form           = document.getElementById("compress-form");
+const fileInput      = document.getElementById("pdf");
+const dropzone       = document.getElementById("dropzone");
+const targetInput    = document.getElementById("targetMB");
+const fileMeta       = document.getElementById("file-meta");
+const fileError      = document.getElementById("file-error");
+const targetError    = document.getElementById("target-error");
+const statusCard     = document.getElementById("status-card");
+const statusTitle    = document.getElementById("status-title");
+const statusPercent  = document.getElementById("status-percent");
+const progressFill   = document.getElementById("progress-fill");
+const statusMessage  = document.getElementById("status-message");
+const metrics        = document.getElementById("metrics");
+const submitButton   = document.getElementById("submit-button");
+const downloadRow    = document.getElementById("download-row");
 const downloadButton = document.getElementById("download-button");
 
 // 使用次数显示
 const usageRemaining = document.getElementById("usage-remaining");
+const watchAdLink    = document.getElementById("watch-ad-link");
 
 // 广告弹窗
-const adModal        = document.getElementById("ad-modal");
-const adModalClose   = document.getElementById("ad-modal-close");
-const adTomorrowBtn  = document.getElementById("ad-tomorrow-btn");
-const adClaimBtn     = document.getElementById("ad-claim-btn");
-const adProgressBar  = document.getElementById("ad-progress-bar");
+const adModal         = document.getElementById("ad-modal");
+const adModalClose    = document.getElementById("ad-modal-close");
+const adTomorrowBtn   = document.getElementById("ad-tomorrow-btn");
+const adClaimBtn      = document.getElementById("ad-claim-btn");
+const adProgressBar   = document.getElementById("ad-progress-bar");
 const adCountdownText = document.getElementById("ad-countdown-text");
-const adModalError   = document.getElementById("ad-modal-error");
+const adModalError    = document.getElementById("ad-modal-error");
 
 // ─── 每日使用次数追踪 (localStorage) ─────────────────────────────────────
-const FREE_PER_DAY     = 3;      // 每日免费次数
-const AD_EXTRA_PER_DAY = 10;     // 每日广告最多额外次数
+const FREE_PER_DAY     = 3;
+const AD_EXTRA_PER_DAY = 10;
 const USAGE_KEY        = "tinypdf_usage";
 
 function todayStr() {
-  return new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+  return new Date().toISOString().slice(0, 10);
 }
 
 function loadUsage() {
@@ -42,7 +43,6 @@ function loadUsage() {
     const raw = localStorage.getItem(USAGE_KEY);
     if (!raw) return { date: todayStr(), count: 0, adCount: 0, totalLifetime: 0 };
     const data = JSON.parse(raw);
-    // 跨天重置
     if (data.date !== todayStr()) {
       return { date: todayStr(), count: 0, adCount: 0, totalLifetime: data.totalLifetime || 0 };
     }
@@ -56,44 +56,59 @@ function saveUsage(data) {
   localStorage.setItem(USAGE_KEY, JSON.stringify(data));
 }
 
-function getRemainingFree() {
+function getTotalRemaining() {
   const u = loadUsage();
-  return Math.max(0, FREE_PER_DAY - u.count);
+  const freeLeft = Math.max(0, FREE_PER_DAY - u.count);
+  const adLeft   = Math.max(0, (u.adCount || 0)); // bonus counts earned today
+  return freeLeft + adLeft;
 }
 
 function canCompress() {
-  const u = loadUsage();
-  if (u.count < FREE_PER_DAY) return true;           // 还有免费次数
-  if (adUnlocked) return true;                        // 看了广告
-  return false;
+  return getTotalRemaining() > 0;
 }
 
 function consumeCompress() {
   const u = loadUsage();
-  u.count += 1;
+  // Consume from ad bonus first, then free
+  if ((u.adCount || 0) > 0) {
+    u.adCount -= 1;
+  } else {
+    u.count += 1;
+  }
   u.totalLifetime = (u.totalLifetime || 0) + 1;
   saveUsage(u);
   updateUsageDisplay();
 }
 
 function updateUsageDisplay() {
-  const remaining = getRemainingFree();
+  const remaining = getTotalRemaining();
   if (usageRemaining) usageRemaining.textContent = remaining;
-  // 按钮文案提示
-  if (!adUnlocked && remaining === 0) {
+
+  // 按钮文案
+  if (remaining === 0) {
     submitButton.textContent = "看广告继续使用";
   } else {
-    submitButton.textContent = "开始压缩";
+    // Don't reset text if currently compressing
+    if (!submitButton.disabled) submitButton.textContent = "开始压缩";
+  }
+
+  // 右上角"看广告"按钮：每日上限已达则隐藏
+  if (watchAdLink) {
+    const u = loadUsage();
+    const adEarned = u.adCount || 0;
+    watchAdLink.style.display = adEarned >= AD_EXTRA_PER_DAY ? "none" : "";
   }
 }
 
-// ─── 广告解锁状态 ─────────────────────────────────────────────────────────
-let adUnlocked   = false;   // 当前会话是否通过广告解锁
-let adTimer      = null;
+// ─── 广告模态框 ────────────────────────────────────────────────────────────
+// mode: 'compress' = 次数用尽时触发，看完后自动压缩
+//       'bonus'    = 主动点"看广告+1"，看完仅增加次数
+let adMode  = 'compress';
+let adTimer = null;
 const AD_WATCH_SECONDS = 5;
 
-function openAdModal() {
-  adUnlocked = false;
+function openAdModal(mode) {
+  adMode = mode || 'compress';
   adClaimBtn.disabled = true;
   adClaimBtn.textContent = "请观看广告...";
   adProgressBar.style.width = "0%";
@@ -102,19 +117,20 @@ function openAdModal() {
   adModal.classList.add("is-open");
 
   let elapsed = 0;
+  clearInterval(adTimer);
   adTimer = setInterval(() => {
     elapsed += 1;
     const pct = Math.min(100, Math.round((elapsed / AD_WATCH_SECONDS) * 100));
     adProgressBar.style.width = pct + "%";
-    const remaining = AD_WATCH_SECONDS - elapsed;
-    if (remaining > 0) {
-      adCountdownText.textContent = `请观看广告，${remaining} 秒后可继续...`;
+    const left = AD_WATCH_SECONDS - elapsed;
+    if (left > 0) {
+      adCountdownText.textContent = `请观看广告，${left} 秒后可继续...`;
     } else {
       clearInterval(adTimer);
       adTimer = null;
-      adCountdownText.textContent = "广告观看完成，点击继续使用";
+      adCountdownText.textContent = "广告观看完成，点击继续";
       adClaimBtn.disabled = false;
-      adClaimBtn.textContent = "继续使用";
+      adClaimBtn.textContent = adMode === 'bonus' ? "领取次数 +1" : "继续使用";
     }
   }, 1000);
 }
@@ -125,27 +141,43 @@ function closeAdModal() {
   adModal.classList.remove("is-open");
 }
 
-// 关闭按钮：取消，不解锁
 adModalClose.addEventListener("click", closeAdModal);
-// 明天再来
 adTomorrowBtn.addEventListener("click", closeAdModal);
-// 点击遮罩关闭
 adModal.addEventListener("click", (e) => {
   if (e.target === adModal) closeAdModal();
 });
-// 继续使用（倒计时完成后）
+
+// 领取/继续 按钮
 adClaimBtn.addEventListener("click", () => {
   if (adClaimBtn.disabled) return;
-  adUnlocked = true;
+
+  if (adMode === 'bonus') {
+    // 仅增加一次使用次数
+    const u = loadUsage();
+    u.adCount = (u.adCount || 0) + 1;
+    saveUsage(u);
+    closeAdModal();
+    updateUsageDisplay();
+    return;
+  }
+
+  // compress 模式：关闭弹窗后直接触发压缩（绕过次数检查）
   closeAdModal();
-  updateUsageDisplay();
-  // 自动触发表单提交
-  form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  doCompress(true); // true = bypass limit check
 });
 
+// 右上角"看广告 +1"独立按钮（Bug 3 fix）
+if (watchAdLink) {
+  watchAdLink.addEventListener("click", () => {
+    const u = loadUsage();
+    if ((u.adCount || 0) >= AD_EXTRA_PER_DAY) return;
+    openAdModal('bonus');
+  });
+}
+
 // ─── 工具函数 ────────────────────────────────────────────────────────────────
-let activeEvents      = null;
-let activeJobId       = null;
+let activeEvents       = null;
+let activeJobId        = null;
 let activeDownloadName = "compressed.pdf";
 
 function formatMB(bytes) {
@@ -165,10 +197,10 @@ function showError(target, message) {
 
 function setMetrics(state) {
   const rows = [
-    ["原文件大小",   formatMB(state.originalBytes)],
-    ["目标大小",     formatMB(state.targetBytes)],
-    ["实际压缩后大小", state.resultBytes ? formatMB(state.resultBytes) : "--"],
-    ["压缩比例",     state.ratio != null ? ratioText(state.ratio) : "--"]
+    ["原文件大小",     formatMB(state.originalBytes)],
+    ["目标大小",       formatMB(state.targetBytes)],
+    ["实际压缩后大小",  state.resultBytes ? formatMB(state.resultBytes) : "--"],
+    ["压缩比例",       (state.ratio != null && Number.isFinite(state.ratio)) ? ratioText(state.ratio) : "--"]
   ];
   metrics.innerHTML = rows
     .map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`)
@@ -254,11 +286,7 @@ async function submitCompression(body) {
       activeEvents.close();
       activeEvents = null;
       submitButton.disabled = false;
-      if (state.status === "done") {
-        // 消耗一次使用次数（仅成功时）
-        consumeCompress();
-        adUnlocked = false; // 重置广告解锁状态
-      }
+      if (state.status === "done") consumeCompress();
       updateUsageDisplay();
     }
   };
@@ -270,50 +298,14 @@ async function submitCompression(body) {
   };
 }
 
-// ─── 事件监听 ────────────────────────────────────────────────────────────────
-fileInput.addEventListener("change", () => {
-  updateFileState(fileInput.files?.[0]);
-});
-
-dropzone.addEventListener("dragover", (e) => {
-  e.preventDefault();
-  dropzone.classList.add("is-dragover");
-});
-dropzone.addEventListener("dragleave", () => {
-  dropzone.classList.remove("is-dragover");
-});
-dropzone.addEventListener("drop", (e) => {
-  e.preventDefault();
-  dropzone.classList.remove("is-dragover");
-  const files = e.dataTransfer?.files;
-  if (!files || files.length !== 1) {
-    showError(fileError, "仅支持单个 PDF 文件，请重新上传");
-    return;
-  }
-  fileInput.files = files;
-  updateFileState(files[0]);
-});
-
-targetInput.addEventListener("input", () => {
-  showError(targetError, validateTarget(fileInput.files?.[0]));
-});
-
-downloadButton.addEventListener("click", startDownload);
-
-form.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const file           = fileInput.files?.[0];
-  const fileValidation = validateFile(file);
+// ─── 核心压缩流程（Bug 4 fix：独立函数，可绕过限制检查直接调用） ─────────
+async function doCompress(bypassLimit = false) {
+  const file = fileInput.files?.[0];
+  const fileValidation   = validateFile(file);
   const targetValidation = validateTarget(file);
   showError(fileError, fileValidation);
   showError(targetError, targetValidation);
   if (fileValidation || targetValidation) return;
-
-  // 检查今日次数
-  if (!canCompress()) {
-    openAdModal();
-    return;
-  }
 
   submitButton.disabled = true;
   submitButton.textContent = "压缩中...";
@@ -348,6 +340,54 @@ form.addEventListener("submit", async (e) => {
     submitButton.disabled = false;
     updateUsageDisplay();
   }
+}
+
+// ─── 事件监听 ────────────────────────────────────────────────────────────────
+fileInput.addEventListener("change", () => {
+  updateFileState(fileInput.files?.[0]);
+});
+
+dropzone.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  dropzone.classList.add("is-dragover");
+});
+dropzone.addEventListener("dragleave", () => {
+  dropzone.classList.remove("is-dragover");
+});
+dropzone.addEventListener("drop", (e) => {
+  e.preventDefault();
+  dropzone.classList.remove("is-dragover");
+  const files = e.dataTransfer?.files;
+  if (!files || files.length !== 1) {
+    showError(fileError, "仅支持单个 PDF 文件，请重新上传");
+    return;
+  }
+  fileInput.files = files;
+  updateFileState(files[0]);
+});
+
+targetInput.addEventListener("input", () => {
+  showError(targetError, validateTarget(fileInput.files?.[0]));
+});
+
+downloadButton.addEventListener("click", startDownload);
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const file = fileInput.files?.[0];
+  const fileValidation   = validateFile(file);
+  const targetValidation = validateTarget(file);
+  showError(fileError, fileValidation);
+  showError(targetError, targetValidation);
+  if (fileValidation || targetValidation) return;
+
+  // 检查今日次数
+  if (!canCompress()) {
+    openAdModal('compress');
+    return;
+  }
+
+  await doCompress();
 });
 
 // ─── 初始化 ──────────────────────────────────────────────────────────────────

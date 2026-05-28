@@ -159,8 +159,12 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
   const downloadName = fileNameWithSuffix(sanitizeFileName(originalName), ".compressed");
 
   try {
-    const inspectInfo = await inspectPdf(inputPath);
-    const originalBytes = inspectInfo.fileSize;
+    // Bug 1 fix: inspect_pdf.swift never outputs fileSize — use fs.stat instead
+    const [inspectInfo, inputStat] = await Promise.all([
+      inspectPdf(inputPath),
+      fsp.stat(inputPath)
+    ]);
+    const originalBytes = inputStat.size;
 
     job.state.originalBytes = originalBytes;
     job.state.targetBytes = targetBytes;
@@ -172,10 +176,11 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     let ratio = null;
     let lastOutput = null;
     let rasterMode = false;
+    let foundAtStep = -1; // track which step first went below target
 
     for (let i = 0; i < QUALITY_STEPS.length; i++) {
       const step = QUALITY_STEPS[i];
-      job.state.progress = 0.1 + (i / QUALITY_STEPS.length) * 0.6;
+      job.state.progress = 0.1 + (i / QUALITY_STEPS.length) * 0.55;
       job.state.message = `压缩中 (${i + 1}/${QUALITY_STEPS.length})`;
       sendEvent(jobId, job.state);
 
@@ -195,12 +200,52 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
           resultBytes = stat.size;
           ratio = resultBytes / originalBytes;
           lastOutput = outputPath;
+          foundAtStep = i;
           break;
         } else {
           lastOutput = tmpOut;
         }
       } catch {
         try { fs.unlinkSync(tmpOut); } catch {}
+      }
+    }
+
+    // Bug 2 fix: binary search refinement between last-above and first-below steps
+    // Runs up to 5 rounds → 32x finer granularity, result converges close to target
+    if (resultBytes && foundAtStep > 0) {
+      let lo = { ...QUALITY_STEPS[foundAtStep - 1] }; // was above target
+      let hi = { ...QUALITY_STEPS[foundAtStep] };     // produced current result
+      for (let r = 0; r < 5; r++) {
+        const midScale   = (lo.scale   + hi.scale)   / 2;
+        const midQuality = (lo.quality + hi.quality) / 2;
+        const tmpRefine  = `${outputPath}.rf${r}.tmp`;
+        job.state.progress = 0.65 + (r / 5) * 0.1;
+        job.state.message  = `精细校准 (${r + 1}/5)`;
+        sendEvent(jobId, job.state);
+        try {
+          await new Promise((resolve, reject) => {
+            const proc = spawn(COMPRESS_BINARY, [
+              inputPath, tmpRefine,
+              String(midScale.toFixed(4)), String(midQuality.toFixed(4))
+            ]);
+            proc.on("close", (code) => code === 0 ? resolve() : reject(new Error(`refine failed`)));
+          });
+          const stat = await fsp.stat(tmpRefine);
+          if (stat.size <= targetBytes) {
+            // Closer to target from below — keep this, search higher quality
+            await fsp.rename(tmpRefine, outputPath);
+            resultBytes = stat.size;
+            ratio = resultBytes / originalBytes;
+            hi = { scale: midScale, quality: midQuality };
+          } else {
+            // Still above target — lower quality
+            lo = { scale: midScale, quality: midQuality };
+            try { fs.unlinkSync(tmpRefine); } catch {}
+          }
+        } catch {
+          try { fs.unlinkSync(tmpRefine); } catch {}
+          break;
+        }
       }
     }
 

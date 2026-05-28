@@ -534,6 +534,7 @@ th {
 .usage-bar {
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 
 .usage-badge {
@@ -547,6 +548,30 @@ th {
   font-size: 14px;
   font-weight: 600;
   color: var(--ink);
+}
+
+/* Bug 3: standalone "看广告 +1" button in topbar */
+.watch-ad-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid rgba(20, 33, 61, 0.18);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.watch-ad-link:hover {
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(20, 33, 61, 0.3);
+}
+
+/* Bug 5: download row spacing */
+#download-row {
+  margin-top: 20px;
 }
 
 .points-num {

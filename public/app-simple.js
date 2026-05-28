@@ -198,7 +198,7 @@ function showError(target, message) {
 function setMetrics(state) {
   const rows = [
     ["原文件大小",     formatMB(state.originalBytes)],
-    ["目标大小",       formatMB(state.targetBytes)],
+    ["目标压缩大小",    formatMB(state.targetBytes)],
     ["实际压缩后大小",  state.resultBytes ? formatMB(state.resultBytes) : "--"],
     ["压缩比例",       (state.ratio != null && Number.isFinite(state.ratio)) ? ratioText(state.ratio) : "--"]
   ];
@@ -241,7 +241,7 @@ function validateTarget(file) {
 
 function updateFileState(file) {
   if (!file) {
-    fileMeta.textContent = "仅支持单个 .pdf 文件，建议不超过 250MB";
+    fileMeta.textContent = "拖拽文件到此处，或点击选择文件";
     showError(fileError, "");
     return;
   }

@@ -80,9 +80,31 @@ h1 {
   letter-spacing: -0.04em;
 }
 
+.hero-sub {
+  margin: 6px 0 0;
+  font-size: clamp(20px, 3.5vw, 36px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
 h2,
 h3 {
   margin: 0;
+}
+
+/* 联系合作链接 */
+.contact-link {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  text-decoration: none;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+.contact-link:hover {
+  opacity: 1;
 }
 
 .lead,

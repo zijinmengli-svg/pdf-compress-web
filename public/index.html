@@ -25,16 +25,17 @@
         <span class="eyebrow">TinyPDF</span>
         <div class="usage-bar">
           <span class="usage-badge" id="usage-display" aria-live="polite">
-            今日剩余 <span id="usage-remaining">--</span>/3 次
+            今日剩余 <span id="usage-remaining">--</span>/3 次数
           </span>
-          <button type="button" class="watch-ad-link" id="watch-ad-link">看广告 +1</button>
+          <a href="/contact" class="contact-link">联系合作</a>
         </div>
       </header>
 
       <section class="hero">
-        <h1>想多大就多大<br />TinyPDF 精准压缩</h1>
+        <h1>TinyPDF</h1>
+        <h2 class="hero-sub">Precision PDF Compression.</h2>
         <p class="lead">
-          仅支持电脑网页版、单个 PDF 文件。保持页数、页面尺寸和版式不变，优先保留图片和文字清晰度。
+          仅支持电脑网页版、单个 PDF 文件压缩。保持页数、页面尺寸和版式不变，优先保留图片和文字清晰度。
         </p>
       </section>
 
@@ -44,8 +45,8 @@
         <form id="compress-form" class="form" novalidate>
           <label class="dropzone" id="dropzone" for="pdf">
             <input id="pdf" name="pdf" type="file" accept="application/pdf" required />
-            <span class="drop-title">拖拽或点击上传 PDF</span>
-            <span class="drop-meta" id="file-meta">仅支持单个 .pdf 文件，建议不超过 250MB</span>
+            <span class="drop-title">上传 PDF 文件</span>
+            <span class="drop-meta" id="file-meta">拖拽文件到此处，或点击选择文件</span>
           </label>
 
           <p class="field-error" id="file-error" hidden></p>

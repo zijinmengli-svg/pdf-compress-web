@@ -23,7 +23,12 @@ const GS_PRESETS = [
   { settings: "/screen",   dpi: 72  },
 ];
 
-const MAX_UPLOAD_MB = 100;
+const MAX_UPLOAD_MB    = 100;
+// ── 运营配置（通过 Railway 环境变量控制，无需改代码）────────────────────────
+// FREE_PER_DAY  每日免费压缩次数（默认 3）
+// AD_ENABLED    是否启用广告弹窗（默认 false，设为 "true" 开启）
+const FREE_PER_DAY_CFG = Math.max(1, Number(process.env.FREE_PER_DAY) || 3);
+const AD_ENABLED_CFG   = process.env.AD_ENABLED === "true";
 
 const jobs = new Map();
 const eventStreams = new Map();
@@ -343,10 +348,9 @@ async function handleMultipart(req, boundary, maxSize) {
 async function handleApiRequest(req, res, url) {
   if (url.pathname === "/api/config" && req.method === "GET") {
     json(res, 200, {
-      siteName: "TinyPDF",
-      maxUploadMB: MAX_UPLOAD_MB,
-      adProvider: "mock",
-      freePerDay: 3
+      freePerDay:  FREE_PER_DAY_CFG,
+      adsEnabled:  AD_ENABLED_CFG,
+      maxUploadMB: MAX_UPLOAD_MB
     });
     return;
   }

@@ -856,3 +856,45 @@ th {
 .btn-secondary:hover {
   background: var(--surface-2, #f3f4f6);
 }
+
+/* ── Toast 提示 ─────────────────────────────────────────────────────────── */
+.toast {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%) translateY(12px);
+  background: rgba(20, 33, 61, 0.92);
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 24px;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: none;
+  z-index: 9999;
+}
+.toast.toast-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ── 质量警告气泡 ────────────────────────────────────────────────────────── */
+.quality-warning {
+  margin-top: 6px;
+  padding: 7px 12px;
+  background: #fff8e6;
+  border: 1px solid #f4c842;
+  border-radius: 8px;
+  color: #7a5700;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ── 次数用尽按钮置灰态 ──────────────────────────────────────────────────── */
+#submit-button.btn-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}

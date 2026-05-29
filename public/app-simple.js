@@ -6,6 +6,7 @@ const targetInput    = document.getElementById("targetMB");
 const fileMeta       = document.getElementById("file-meta");
 const fileError      = document.getElementById("file-error");
 const targetError    = document.getElementById("target-error");
+const qualityWarning = document.getElementById("quality-warning");
 const statusCard     = document.getElementById("status-card");
 const statusTitle    = document.getElementById("status-title");
 const statusPercent  = document.getElementById("status-percent");
@@ -15,10 +16,8 @@ const metrics        = document.getElementById("metrics");
 const submitButton   = document.getElementById("submit-button");
 const downloadRow    = document.getElementById("download-row");
 const downloadButton = document.getElementById("download-button");
-
-// 使用次数显示
 const usageRemaining = document.getElementById("usage-remaining");
-const watchAdLink    = document.getElementById("watch-ad-link");
+const toastEl        = document.getElementById("toast");
 
 // 广告弹窗
 const adModal         = document.getElementById("ad-modal");
@@ -29,11 +28,14 @@ const adProgressBar   = document.getElementById("ad-progress-bar");
 const adCountdownText = document.getElementById("ad-countdown-text");
 const adModalError    = document.getElementById("ad-modal-error");
 
-// ─── 每日使用次数追踪 (localStorage) ─────────────────────────────────────
-const FREE_PER_DAY     = 3;
+// ─── 运营配置（从服务端 /api/config 获取，初始化完成前使用默认值）─────────
+let FREE_PER_DAY = 3;   // 每日免费次数（服务端可通过 FREE_PER_DAY 环境变量覆盖）
+let ADS_ENABLED  = false; // 广告是否启用（服务端 AD_ENABLED=true 时开启）
+
 const AD_EXTRA_PER_DAY = 10;
 const USAGE_KEY        = "tinypdf_usage";
 
+// ─── 每日使用次数追踪 (localStorage) ─────────────────────────────────────
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -59,7 +61,7 @@ function saveUsage(data) {
 function getTotalRemaining() {
   const u = loadUsage();
   const freeLeft = Math.max(0, FREE_PER_DAY - u.count);
-  const adLeft   = Math.max(0, (u.adCount || 0)); // bonus counts earned today
+  const adLeft   = Math.max(0, u.adCount || 0);
   return freeLeft + adLeft;
 }
 
@@ -69,7 +71,6 @@ function canCompress() {
 
 function consumeCompress() {
   const u = loadUsage();
-  // Consume from ad bonus first, then free
   if ((u.adCount || 0) > 0) {
     u.adCount -= 1;
   } else {
@@ -84,31 +85,46 @@ function updateUsageDisplay() {
   const remaining = getTotalRemaining();
   if (usageRemaining) usageRemaining.textContent = remaining;
 
-  // 按钮文案
   if (remaining === 0) {
-    submitButton.textContent = "看广告继续使用";
+    if (ADS_ENABLED) {
+      submitButton.disabled = false;
+      submitButton.textContent = "看广告继续使用";
+      submitButton.classList.remove("btn-disabled");
+    } else {
+      submitButton.disabled = true;
+      submitButton.textContent = "今日次数已用完";
+      submitButton.classList.add("btn-disabled");
+    }
   } else {
-    // Don't reset text if currently compressing
-    if (!submitButton.disabled) submitButton.textContent = "开始压缩";
-  }
-
-  // 右上角"看广告"按钮：每日上限已达则隐藏
-  if (watchAdLink) {
-    const u = loadUsage();
-    const adEarned = u.adCount || 0;
-    watchAdLink.style.display = adEarned >= AD_EXTRA_PER_DAY ? "none" : "";
+    if (!submitButton.classList.contains("btn-compressing")) {
+      submitButton.disabled = false;
+      submitButton.textContent = "开始压缩";
+      submitButton.classList.remove("btn-disabled");
+    }
   }
 }
 
+// ─── Toast 提示 ────────────────────────────────────────────────────────────
+let toastTimer = null;
+function showToast(msg) {
+  if (!toastEl) return;
+  toastEl.textContent = msg;
+  toastEl.hidden = false;
+  toastEl.classList.add("toast-visible");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toastEl.classList.remove("toast-visible");
+    setTimeout(() => { toastEl.hidden = true; }, 300);
+  }, 3000);
+}
+
 // ─── 广告模态框 ────────────────────────────────────────────────────────────
-// mode: 'compress' = 次数用尽时触发，看完后自动压缩
-//       'bonus'    = 主动点"看广告+1"，看完仅增加次数
-let adMode  = 'compress';
+let adMode  = "compress";
 let adTimer = null;
 const AD_WATCH_SECONDS = 5;
 
 function openAdModal(mode) {
-  adMode = mode || 'compress';
+  adMode = mode || "compress";
   adClaimBtn.disabled = true;
   adClaimBtn.textContent = "请观看广告...";
   adProgressBar.style.width = "0%";
@@ -130,7 +146,7 @@ function openAdModal(mode) {
       adTimer = null;
       adCountdownText.textContent = "广告观看完成，点击继续";
       adClaimBtn.disabled = false;
-      adClaimBtn.textContent = adMode === 'bonus' ? "领取次数 +1" : "继续使用";
+      adClaimBtn.textContent = adMode === "bonus" ? "领取次数 +1" : "继续使用";
     }
   }, 1000);
 }
@@ -147,12 +163,9 @@ adModal.addEventListener("click", (e) => {
   if (e.target === adModal) closeAdModal();
 });
 
-// 领取/继续 按钮
 adClaimBtn.addEventListener("click", () => {
   if (adClaimBtn.disabled) return;
-
-  if (adMode === 'bonus') {
-    // 仅增加一次使用次数
+  if (adMode === "bonus") {
     const u = loadUsage();
     u.adCount = (u.adCount || 0) + 1;
     saveUsage(u);
@@ -160,19 +173,24 @@ adClaimBtn.addEventListener("click", () => {
     updateUsageDisplay();
     return;
   }
-
-  // compress 模式：关闭弹窗后直接触发压缩（绕过次数检查）
   closeAdModal();
-  doCompress(true); // true = bypass limit check
+  doCompress(true);
 });
 
-// 右上角"看广告 +1"独立按钮（Bug 3 fix）
-if (watchAdLink) {
-  watchAdLink.addEventListener("click", () => {
-    const u = loadUsage();
-    if ((u.adCount || 0) >= AD_EXTRA_PER_DAY) return;
-    openAdModal('bonus');
-  });
+// ─── 质量警告气泡 ──────────────────────────────────────────────────────────
+// 当目标大小 < 原文件 15% 时提示用户，但不阻止压缩
+const QUALITY_WARN_RATIO = 0.15;
+
+function checkQualityWarning() {
+  if (!qualityWarning) return;
+  const file = fileInput.files?.[0];
+  const targetMB = parseFloat(targetInput.value);
+  if (file && Number.isFinite(targetMB) && targetMB > 0) {
+    const originalMB = file.size / 1024 / 1024;
+    qualityWarning.hidden = !(targetMB / originalMB < QUALITY_WARN_RATIO);
+  } else {
+    qualityWarning.hidden = true;
+  }
 }
 
 // ─── 工具函数 ────────────────────────────────────────────────────────────────
@@ -197,10 +215,10 @@ function showError(target, message) {
 
 function setMetrics(state) {
   const rows = [
-    ["原文件大小",     formatMB(state.originalBytes)],
-    ["目标压缩大小",    formatMB(state.targetBytes)],
-    ["实际压缩后大小",  state.resultBytes ? formatMB(state.resultBytes) : "--"],
-    ["压缩比例",       (state.ratio != null && Number.isFinite(state.ratio)) ? ratioText(state.ratio) : "--"]
+    ["原文件大小",    formatMB(state.originalBytes)],
+    ["目标压缩大小",  formatMB(state.targetBytes)],
+    ["实际压缩后大小", state.resultBytes ? formatMB(state.resultBytes) : "--"],
+    ["压缩比例",      (state.ratio != null && Number.isFinite(state.ratio)) ? ratioText(state.ratio) : "--"]
   ];
   metrics.innerHTML = rows
     .map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`)
@@ -246,8 +264,7 @@ function updateFileState(file) {
     return;
   }
   fileMeta.textContent = `${file.name} · ${formatMB(file.size)}`;
-  const error = validateFile(file);
-  showError(fileError, error);
+  showError(fileError, validateFile(file));
 }
 
 async function startDownload() {
@@ -285,6 +302,7 @@ async function submitCompression(body) {
     if (state.status === "done" || state.status === "error") {
       activeEvents.close();
       activeEvents = null;
+      submitButton.classList.remove("btn-compressing");
       submitButton.disabled = false;
       if (state.status === "done") consumeCompress();
       updateUsageDisplay();
@@ -293,12 +311,12 @@ async function submitCompression(body) {
   activeEvents.onerror = () => {
     if (activeEvents) activeEvents.close();
     activeEvents = null;
+    submitButton.classList.remove("btn-compressing");
     submitButton.disabled = false;
     updateUsageDisplay();
   };
 }
 
-// ─── 核心压缩流程（Bug 4 fix：独立函数，可绕过限制检查直接调用） ─────────
 async function doCompress(bypassLimit = false) {
   const file = fileInput.files?.[0];
   const fileValidation   = validateFile(file);
@@ -308,6 +326,7 @@ async function doCompress(bypassLimit = false) {
   if (fileValidation || targetValidation) return;
 
   submitButton.disabled = true;
+  submitButton.classList.add("btn-compressing");
   submitButton.textContent = "压缩中...";
   downloadRow.hidden = true;
   setStatus({
@@ -337,6 +356,7 @@ async function doCompress(bypassLimit = false) {
       resultBytes: null,
       ratio: null
     });
+    submitButton.classList.remove("btn-compressing");
     submitButton.disabled = false;
     updateUsageDisplay();
   }
@@ -345,6 +365,7 @@ async function doCompress(bypassLimit = false) {
 // ─── 事件监听 ────────────────────────────────────────────────────────────────
 fileInput.addEventListener("change", () => {
   updateFileState(fileInput.files?.[0]);
+  checkQualityWarning();
 });
 
 dropzone.addEventListener("dragover", (e) => {
@@ -364,16 +385,36 @@ dropzone.addEventListener("drop", (e) => {
   }
   fileInput.files = files;
   updateFileState(files[0]);
+  checkQualityWarning();
 });
 
 targetInput.addEventListener("input", () => {
   showError(targetError, validateTarget(fileInput.files?.[0]));
+  checkQualityWarning();
 });
 
 downloadButton.addEventListener("click", startDownload);
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
+
+  // 次数已用完处理
+  if (!canCompress()) {
+    if (ADS_ENABLED) {
+      openAdModal("compress");
+    } else {
+      // 无广告模式：置灰 + Toast + GA4 埋点
+      showToast("今日次数已用完，明日再来");
+      if (typeof gtag === "function") {
+        gtag("event", "quota_exhausted", {
+          event_category: "engagement",
+          event_label: "no_ad_mode"
+        });
+      }
+    }
+    return;
+  }
+
   const file = fileInput.files?.[0];
   const fileValidation   = validateFile(file);
   const targetValidation = validateTarget(file);
@@ -381,14 +422,27 @@ form.addEventListener("submit", async (e) => {
   showError(targetError, targetValidation);
   if (fileValidation || targetValidation) return;
 
-  // 检查今日次数
-  if (!canCompress()) {
-    openAdModal('compress');
-    return;
-  }
-
   await doCompress();
 });
 
-// ─── 初始化 ──────────────────────────────────────────────────────────────────
-updateUsageDisplay();
+// ─── 初始化：从服务端拉取配置 ─────────────────────────────────────────────
+async function initConfig() {
+  try {
+    const res = await fetch("/api/config");
+    if (res.ok) {
+      const cfg = await res.json();
+      if (typeof cfg.freePerDay === "number") FREE_PER_DAY = cfg.freePerDay;
+      if (typeof cfg.adsEnabled === "boolean") ADS_ENABLED = cfg.adsEnabled;
+    }
+  } catch {
+    // 网络失败时使用默认值（FREE_PER_DAY=3, ADS_ENABLED=false）
+  }
+  // 更新 header 显示的总次数
+  const usageDisplay = document.getElementById("usage-display");
+  if (usageDisplay) {
+    usageDisplay.innerHTML = `今日剩余 <span id="usage-remaining">--</span>/${FREE_PER_DAY} 次数`;
+  }
+  updateUsageDisplay();
+}
+
+initConfig();

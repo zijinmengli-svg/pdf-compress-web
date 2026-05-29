@@ -62,6 +62,9 @@
               <input id="targetMB" name="targetMB" type="number" min="0.1" step="0.1" placeholder="例如 20" required />
               <span class="suffix">MB</span>
             </div>
+            <div class="quality-warning" id="quality-warning" hidden>
+              ⚠️ 当前压缩值过小，会导致文件损失过大
+            </div>
           </label>
 
           <p class="field-error" id="target-error" hidden></p>
@@ -99,44 +102,38 @@
       </div>
     </footer>
 
-    <!-- 广告解锁弹窗：每日次数用完后弹出 -->
+    <!-- 广告解锁弹窗（由后台 AD_ENABLED 控制是否启用） -->
     <div id="ad-modal" class="modal-overlay">
       <div class="modal-box">
         <button type="button" class="modal-close" id="ad-modal-close">×</button>
-        <h2>今日 3 次免费压缩已用完</h2>
+        <h2>今日免费次数已用完</h2>
         <p style="color:var(--muted);font-size:14px;margin:8px 0 16px">
           观看以下内容后可解锁 1 次压缩，或明天再来（每日自动重置）。
         </p>
-
-        <!-- 广告内容区（mock 占位；上线时替换为真实广告代码） -->
         <div id="ad-slot-container" style="
           width:300px;height:250px;margin:0 auto 16px;
           background:#f3f4f6;border:1px dashed #d1d5db;border-radius:12px;
           display:flex;align-items:center;justify-content:center;
           color:#9ca3af;font-size:14px;
-        ">
-          广告加载中...
-        </div>
-
-        <!-- 倒计时进度条 -->
+        ">广告加载中...</div>
         <div style="background:#e5e7eb;border-radius:4px;height:6px;margin-bottom:8px;overflow:hidden">
           <div id="ad-progress-bar" style="height:100%;width:0%;background:#374151;border-radius:4px;transition:width 1s linear"></div>
         </div>
         <p id="ad-countdown-text" style="text-align:center;font-size:13px;color:var(--muted);margin-bottom:16px">
           请观看广告，5 秒后可继续...
         </p>
-
         <p class="modal-error" id="ad-modal-error"></p>
-
         <div class="action-row" style="justify-content:center;gap:12px;flex-wrap:nowrap">
           <button type="button" class="btn-secondary" id="ad-tomorrow-btn" style="flex:1">明天再来</button>
           <button type="button" id="ad-claim-btn" disabled style="flex:2">请观看广告...</button>
         </div>
-
         <p class="modal-tip" style="margin-top:8px">每日最多可通过广告额外获得 10 次</p>
       </div>
     </div>
 
-    <script src="/app-simple.js?v=1.1.0" defer></script>
+    <!-- Toast 提示（无广告模式降级用） -->
+    <div id="toast" class="toast" hidden></div>
+
+    <script src="/app-simple.js?v=1.2.0" defer></script>
   </body>
 </html>

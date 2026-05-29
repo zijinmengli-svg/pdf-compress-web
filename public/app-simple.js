@@ -83,7 +83,8 @@ function consumeCompress() {
 
 function updateUsageDisplay() {
   const remaining = getTotalRemaining();
-  if (usageRemaining) usageRemaining.textContent = remaining;
+  const el = document.getElementById("usage-remaining");
+  if (el) el.textContent = remaining;
 
   if (remaining === 0) {
     if (ADS_ENABLED) {

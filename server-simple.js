@@ -80,6 +80,44 @@ async function checkPdf(filePath) {
 }
 
 // ── Ghostscript 压缩调用 ────────────────────────────────────────────────────
+async function runGsJpeg(inputPath, outputPattern, dpi, quality) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      "-sDEVICE=jpeg",
+      `-r${dpi}`,
+      `-dJPEGQ=${quality}`,
+      "-dNOPAUSE", "-dQUIET", "-dBATCH",
+      `-sOutputFile=${outputPattern}`,
+      inputPath
+    ];
+    const proc = spawn("gs", args);
+    const errChunks = [];
+    proc.stderr.on("data", (d) => errChunks.push(d));
+    proc.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`gs jpeg exited ${code}: ${Buffer.concat(errChunks).toString().slice(0, 300)}`));
+    });
+  });
+}
+
+async function runGsCombine(imageFiles, outputPath) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      "-sDEVICE=pdfwrite",
+      "-dNOPAUSE", "-dQUIET", "-dBATCH",
+      `-sOutputFile=${outputPath}`,
+      ...imageFiles
+    ];
+    const proc = spawn("gs", args);
+    const errChunks = [];
+    proc.stderr.on("data", (d) => errChunks.push(d));
+    proc.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`gs combine exited ${code}: ${Buffer.concat(errChunks).toString().slice(0, 300)}`));
+    });
+  });
+}
+
 async function runGs(inputPath, outputPath, settings, dpi) {
   return new Promise((resolve, reject) => {
     const args = [
@@ -148,6 +186,7 @@ function cleanupJob(jobId) {
     const base = job.outputPath;
     for (let i = 0; i < 5; i++) { try { fs.unlinkSync(`${base}.p${i}.tmp`);  } catch {} } // 预设扫描
     for (let r = 0; r < 4; r++) { try { fs.unlinkSync(`${base}.rf${r}.tmp`); } catch {} } // 二分精细
+    for (let ri = 0; ri < 6; ri++) { try { fs.unlinkSync(`${base}.r${ri}.pdf`); } catch {} } // 栅格化
   }
   jobs.delete(jobId);
   eventStreams.delete(jobId);
@@ -267,6 +306,71 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
         } catch {
           try { fs.unlinkSync(tmpRefine); } catch {}
           break;
+        }
+      }
+    }
+
+    // ── Phase 3: 强制栅格化（矢量内容无法靠常规压缩达标时的最终手段）──────
+    // 将每页渲染成 JPEG 再合并为 PDF，可强制压缩任何类型的 PDF 到目标大小
+    if (resultBytes === null || resultBytes > targetBytes) {
+      const RASTER_PRESETS = [
+        { dpi: 150, quality: 85 },
+        { dpi: 120, quality: 70 },
+        { dpi: 96,  quality: 55 },
+        { dpi: 72,  quality: 40 },
+        { dpi: 72,  quality: 20 },
+        { dpi: 48,  quality: 20 },
+      ];
+
+      const tmpDir  = path.dirname(outputPath);
+      const jobBase = path.basename(outputPath, ".pdf");
+
+      for (let ri = 0; ri < RASTER_PRESETS.length; ri++) {
+        if (resultBytes !== null && resultBytes <= targetBytes) break;
+        const { dpi, quality } = RASTER_PRESETS[ri];
+        job.state.progress = 0.85 + (ri / RASTER_PRESETS.length) * 0.12;
+        job.state.message  = `强力压缩中 (${ri + 1}/${RASTER_PRESETS.length})`;
+        sendEvent(jobId, job.state);
+
+        const pagePattern = path.join(tmpDir, `${jobBase}.r${ri}.p%04d.jpg`);
+        const rasterOut   = `${outputPath}.r${ri}.pdf`;
+
+        try {
+          await runGsJpeg(inputPath, pagePattern, dpi, quality);
+
+          const allFiles = await fsp.readdir(tmpDir);
+          const pageFiles = allFiles
+            .filter(f => f.startsWith(`${jobBase}.r${ri}.p`) && f.endsWith(".jpg"))
+            .sort()
+            .map(f => path.join(tmpDir, f));
+
+          if (pageFiles.length === 0) continue;
+
+          await runGsCombine(pageFiles, rasterOut);
+          for (const f of pageFiles) { try { fs.unlinkSync(f); } catch {} }
+
+          const stat = await fsp.stat(rasterOut);
+          registerBestValid(rasterOut, stat.size);
+
+          if (stat.size <= targetBytes) {
+            await fsp.rename(rasterOut, outputPath);
+            resultBytes    = stat.size;
+            ratio          = resultBytes / originalBytes;
+            bestValidPath  = outputPath;
+            bestValidBytes = resultBytes;
+            break;
+          }
+          try { fs.unlinkSync(rasterOut); } catch {}
+        } catch {
+          try {
+            const leftover = await fsp.readdir(tmpDir);
+            for (const f of leftover) {
+              if (f.startsWith(`${jobBase}.r${ri}.p`) && f.endsWith(".jpg")) {
+                try { fs.unlinkSync(path.join(tmpDir, f)); } catch {}
+              }
+            }
+          } catch {}
+          try { fs.unlinkSync(rasterOut); } catch {}
         }
       }
     }

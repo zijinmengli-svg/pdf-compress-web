@@ -224,7 +224,7 @@ function validateFile(file) {
   if (!file) return "上传失败，请选择有效的 PDF 文件";
   if (!file.name.toLowerCase().endsWith(".pdf")) return "仅支持 PDF 文件，请重新上传";
   if (file.size <= 0) return "上传失败，请选择有效的 PDF 文件";
-  if (file.size >= 250 * 1024 * 1024) return "文件过大，当前最大支持 250MB";
+  if (file.size >= 100 * 1024 * 1024) return "文件过大，当前最大支持 100MB";
   return "";
 }
 

@@ -3,65 +3,27 @@ const fs = require("fs");
 const fsp = fs.promises;
 const path = require("path");
 const os = require("os");
+const crypto = require("crypto");
 const { spawn } = require("child_process");
 const { URL } = require("url");
 
 const PORT = Number(process.env.PORT || 3487);
-const HOST = process.env.HOST || "127.0.0.1";
+const HOST = process.env.HOST || "0.0.0.0";
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
-const BUILD_DIR = path.join(ROOT, ".build");
-const SCRIPTS_DIR = path.join(ROOT, "scripts");
-const COMPRESS_SOURCE = path.join(SCRIPTS_DIR, "compress_pdf.swift");
-const RASTER_SOURCE = path.join(SCRIPTS_DIR, "rasterize_pdf.swift");
-const INSPECT_SOURCE = path.join(SCRIPTS_DIR, "inspect_pdf.swift");
-const COMPRESS_BINARY = path.join(BUILD_DIR, "compress-pdf");
-const RASTER_BINARY = path.join(BUILD_DIR, "rasterize-pdf");
-const INSPECT_BINARY = path.join(BUILD_DIR, "inspect-pdf");
 
-const QUALITY_STEPS = [
-  { scale: 1.0, quality: 0.98 },
-  { scale: 0.98, quality: 0.96 },
-  { scale: 0.96, quality: 0.94 },
-  { scale: 0.94, quality: 0.92 },
-  { scale: 0.92, quality: 0.9 },
-  { scale: 0.88, quality: 0.86 },
-  { scale: 0.84, quality: 0.82 },
-  { scale: 0.8, quality: 0.78 },
-  { scale: 0.76, quality: 0.74 },
-  { scale: 0.72, quality: 0.7 },
-  { scale: 0.68, quality: 0.66 },
-  { scale: 0.64, quality: 0.62 },
-  { scale: 0.6, quality: 0.58 },
-  { scale: 0.56, quality: 0.54 },
-  { scale: 0.52, quality: 0.5 },
-  { scale: 0.48, quality: 0.46 },
-  { scale: 0.44, quality: 0.42 },
-  { scale: 0.4, quality: 0.38 },
-  { scale: 0.36, quality: 0.34 },
-  { scale: 0.32, quality: 0.3 },
-  { scale: 0.28, quality: 0.26 },
-  { scale: 0.24, quality: 0.22 },
-  { scale: 0.2, quality: 0.2 }
+// ── Ghostscript 压缩参数 ────────────────────────────────────────────────────
+// 5档预设：从高质量（大文件）到低质量（小文件）依次尝试，找到第一个 <= 目标大小的预设后
+// 在它和上一档之间做二分精细校准（最多 4 轮），将结果收敛到尽量接近目标。
+const GS_PRESETS = [
+  { settings: "/prepress", dpi: 300 },
+  { settings: "/printer",  dpi: 200 },
+  { settings: "/ebook",    dpi: 150 },
+  { settings: "/screen",   dpi: 96  },
+  { settings: "/screen",   dpi: 72  },
 ];
 
-const RASTER_STEPS = [
-  { dpi: 144, quality: 0.82, grayscale: false },
-  { dpi: 120, quality: 0.74, grayscale: false },
-  { dpi: 96, quality: 0.66, grayscale: false },
-  { dpi: 84, quality: 0.58, grayscale: false },
-  { dpi: 72, quality: 0.5, grayscale: false },
-  { dpi: 60, quality: 0.42, grayscale: false },
-  { dpi: 48, quality: 0.34, grayscale: false },
-  { dpi: 42, quality: 0.28, grayscale: false },
-  { dpi: 36, quality: 0.24, grayscale: true },
-  { dpi: 30, quality: 0.18, grayscale: true },
-  { dpi: 24, quality: 0.14, grayscale: true },
-  { dpi: 18, quality: 0.1, grayscale: true },
-  { dpi: 12, quality: 0.08, grayscale: true },
-  { dpi: 8, quality: 0.05, grayscale: true },
-  { dpi: 6, quality: 0.03, grayscale: true }
-];
+const MAX_UPLOAD_MB = 100;
 
 const jobs = new Map();
 const eventStreams = new Map();
@@ -92,34 +54,75 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
-async function ensureDirectories() {
-  await fsp.mkdir(BUILD_DIR, { recursive: true });
+// ── 检查 PDF 有效性和加密状态（读取文件头，无需外部进程）──────────────────
+async function checkPdf(filePath) {
+  const stat = await fsp.stat(filePath);
+  const fd   = await fsp.open(filePath, "r");
+  const headBuf = Buffer.alloc(8192);
+  await fd.read(headBuf, 0, 8192, 0);
+  // /Encrypt 在 PDF trailer 中，位于文件尾部，必须同时检查尾部
+  const tailSize   = Math.min(8192, stat.size);
+  const tailOffset = stat.size - tailSize;
+  const tailBuf    = Buffer.alloc(tailSize);
+  await fd.read(tailBuf, 0, tailSize, tailOffset);
+  await fd.close();
+  const header = headBuf.toString("latin1", 0, 5);
+  if (header !== "%PDF-") return { valid: false, encrypted: false };
+  const encrypted =
+    headBuf.toString("latin1").includes("/Encrypt") ||
+    tailBuf.toString("latin1").includes("/Encrypt");
+  return { valid: true, encrypted };
 }
 
-async function buildSwiftBinaries() {
-  await ensureDirectories();
-  const builds = [
-    { source: COMPRESS_SOURCE, binary: COMPRESS_BINARY },
-    { source: RASTER_SOURCE, binary: RASTER_BINARY },
-    { source: INSPECT_SOURCE, binary: INSPECT_BINARY }
-  ];
-  for (const { source, binary } of builds) {
-    try {
-      await fsp.access(binary, fs.constants.X_OK);
-      const sourceStat = await fsp.stat(source);
-      const binaryStat = await fsp.stat(binary);
-      if (binaryStat.mtime > sourceStat.mtime) continue;
-    } catch {}
-    await new Promise((resolve, reject) => {
-      const swiftc = spawn("swiftc", ["-O", "-o", binary, source]);
-      swiftc.on("close", (code) => code === 0 ? resolve() : reject(new Error(`swiftc failed with ${code}`)));
+// ── Ghostscript 压缩调用 ────────────────────────────────────────────────────
+async function runGs(inputPath, outputPath, settings, dpi) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      "-sDEVICE=pdfwrite",
+      "-dCompatibilityLevel=1.4",
+      "-dNOPAUSE", "-dQUIET", "-dBATCH",
+      `-dPDFSETTINGS=${settings}`,
+      "-dDownsampleColorImages=true",
+      "-dDownsampleGrayImages=true",
+      "-dDownsampleMonoImages=true",
+      `-dColorImageResolution=${dpi}`,
+      `-dGrayImageResolution=${dpi}`,
+      `-dMonoImageResolution=${Math.min(600, dpi * 2)}`,
+      `-sOutputFile=${outputPath}`,
+      inputPath
+    ];
+    const proc = spawn("gs", args);
+    const errChunks = [];
+    proc.stderr.on("data", (d) => errChunks.push(d));
+    proc.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        const msg = Buffer.concat(errChunks).toString("utf8").slice(0, 300);
+        reject(new Error(`gs exited ${code}: ${msg}`));
+      }
     });
-  }
+  });
 }
 
 function generateJobId() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  return crypto.randomBytes(12).toString("hex");
 }
+
+// ── 安全响应头 ──────────────────────────────────────────────────────────────
+function setSecurityHeaders(res) {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'"
+  );
+}
+
+// ── 最大并发任务数（防止内存/磁盘 DoS）────────────────────────────────────
+const MAX_CONCURRENT_JOBS = 5;
 
 function sendEvent(jobId, state) {
   const streams = eventStreams.get(jobId) || [];
@@ -136,19 +139,13 @@ function cleanupJob(jobId) {
   if (job) {
     try { fs.unlinkSync(job.inputPath); } catch {}
     try { fs.unlinkSync(job.outputPath); } catch {}
+    // 删除所有可能泄漏的中间临时文件
+    const base = job.outputPath;
+    for (let i = 0; i < 5; i++) { try { fs.unlinkSync(`${base}.p${i}.tmp`);  } catch {} } // 预设扫描
+    for (let r = 0; r < 4; r++) { try { fs.unlinkSync(`${base}.rf${r}.tmp`); } catch {} } // 二分精细
   }
   jobs.delete(jobId);
   eventStreams.delete(jobId);
-}
-
-async function inspectPdf(inputPath) {
-  const { stdout } = await new Promise((resolve, reject) => {
-    const proc = spawn(INSPECT_BINARY, [inputPath]);
-    const out = [];
-    proc.stdout.on("data", (d) => out.push(d));
-    proc.on("close", (code) => code === 0 ? resolve({ stdout: Buffer.concat(out).toString("utf8") }) : reject(new Error(`inspect failed ${code}`)));
-  });
-  return JSON.parse(stdout);
 }
 
 async function compressPdf(jobId, inputPath, targetBytes, originalName) {
@@ -159,87 +156,107 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
   const downloadName = fileNameWithSuffix(sanitizeFileName(originalName), ".compressed");
 
   try {
-    // Bug 1 fix: inspect_pdf.swift never outputs fileSize — use fs.stat instead
-    const [inspectInfo, inputStat] = await Promise.all([
-      inspectPdf(inputPath),
+    // ── 校验 PDF ──────────────────────────────────────────────────────────
+    const [pdfInfo, inputStat] = await Promise.all([
+      checkPdf(inputPath),
       fsp.stat(inputPath)
     ]);
     const originalBytes = inputStat.size;
 
+    if (!pdfInfo.valid)     throw new Error("无效的 PDF 文件，无法压缩");
+    if (pdfInfo.encrypted)  throw new Error("该 PDF 已加密，请先解除加密后再压缩");
+
+    // 最小有效输出：>= 原文件 1% 且 >= 10KB
+    const MIN_VALID_BYTES = Math.max(Math.round(originalBytes * 0.01), 10 * 1024);
+
     job.state.originalBytes = originalBytes;
-    job.state.targetBytes = targetBytes;
-    job.state.progress = 0.1;
-    job.state.message = "开始压缩";
+    job.state.targetBytes   = targetBytes;
+    job.state.progress      = 0.1;
+    job.state.message       = "开始压缩";
     sendEvent(jobId, job.state);
 
-    let resultBytes = null;
-    let ratio = null;
-    let lastOutput = null;
-    let rasterMode = false;
-    let foundAtStep = -1; // track which step first went below target
+    let resultBytes    = null;
+    let ratio          = null;
+    let bestValidPath  = null;
+    let bestValidBytes = Infinity;
+    let foundPresetIdx = -1;
 
-    for (let i = 0; i < QUALITY_STEPS.length; i++) {
-      const step = QUALITY_STEPS[i];
-      job.state.progress = 0.1 + (i / QUALITY_STEPS.length) * 0.55;
-      job.state.message = `压缩中 (${i + 1}/${QUALITY_STEPS.length})`;
+    function registerBestValid(filePath, fileSize) {
+      if (fileSize >= MIN_VALID_BYTES && fileSize < bestValidBytes) {
+        if (bestValidPath && bestValidPath !== outputPath && bestValidPath !== inputPath) {
+          try { fs.unlinkSync(bestValidPath); } catch {}
+        }
+        bestValidPath  = filePath;
+        bestValidBytes = fileSize;
+      }
+    }
+
+    // ── Phase 1: 5档预设扫描（从高质量到低质量）──────────────────────────
+    // 找到第一个 <= 目标大小的档，同时记录上一档（超目标的最高质量档）
+    for (let i = 0; i < GS_PRESETS.length; i++) {
+      const preset = GS_PRESETS[i];
+      job.state.progress = 0.1 + (i / GS_PRESETS.length) * 0.55;
+      job.state.message  = `压缩中 (${i + 1}/${GS_PRESETS.length})`;
       sendEvent(jobId, job.state);
 
-      const tmpOut = `${outputPath}.${i}.tmp`;
+      const tmpOut = `${outputPath}.p${i}.tmp`;
       try {
-        await new Promise((resolve, reject) => {
-          const proc = spawn(COMPRESS_BINARY, [
-            inputPath, tmpOut,
-            String(step.scale), String(step.quality)
-          ]);
-          proc.on("close", (code) => code === 0 ? resolve() : reject(new Error(`compress failed ${code}`)));
-        });
-
+        await runGs(inputPath, tmpOut, preset.settings, preset.dpi);
         const stat = await fsp.stat(tmpOut);
+
+        if (stat.size < MIN_VALID_BYTES) {
+          try { fs.unlinkSync(tmpOut); } catch {}
+          break; // 更低档只会更差
+        }
+
+        registerBestValid(tmpOut, stat.size);
+
         if (stat.size <= targetBytes) {
           await fsp.rename(tmpOut, outputPath);
-          resultBytes = stat.size;
-          ratio = resultBytes / originalBytes;
-          lastOutput = outputPath;
-          foundAtStep = i;
+          resultBytes    = stat.size;
+          ratio          = resultBytes / originalBytes;
+          foundPresetIdx = i;
+          bestValidPath  = outputPath;
+          bestValidBytes = resultBytes;
           break;
-        } else {
-          lastOutput = tmpOut;
         }
+        // 超目标但有效 — 已通过 registerBestValid 保留
       } catch {
         try { fs.unlinkSync(tmpOut); } catch {}
       }
     }
 
-    // Bug 2 fix: binary search refinement between last-above and first-below steps
-    // Runs up to 5 rounds → 32x finer granularity, result converges close to target
-    if (resultBytes && foundAtStep > 0) {
-      let lo = { ...QUALITY_STEPS[foundAtStep - 1] }; // was above target
-      let hi = { ...QUALITY_STEPS[foundAtStep] };     // produced current result
-      for (let r = 0; r < 5; r++) {
-        const midScale   = (lo.scale   + hi.scale)   / 2;
-        const midQuality = (lo.quality + hi.quality) / 2;
-        const tmpRefine  = `${outputPath}.rf${r}.tmp`;
-        job.state.progress = 0.65 + (r / 5) * 0.1;
-        job.state.message  = `精细校准 (${r + 1}/5)`;
+    // ── Phase 2: 二分精细校准（在上一档 DPI 和当前档 DPI 之间细分）────────
+    // 最多 4 轮，每轮将区间缩小一半，找到尽量接近目标的最高 DPI（最好画质）
+    if (resultBytes !== null && foundPresetIdx > 0) {
+      const loPreset = GS_PRESETS[foundPresetIdx];     // 达标档（DPI 低）
+      const hiPreset = GS_PRESETS[foundPresetIdx - 1]; // 未达标档（DPI 高）
+      let loDpi = loPreset.dpi;
+      let hiDpi = hiPreset.dpi;
+
+      for (let r = 0; r < 4; r++) {
+        if (hiDpi - loDpi < 6) break; // 区间已足够小，停止
+        const midDpi    = Math.round((loDpi + hiDpi) / 2);
+        const tmpRefine = `${outputPath}.rf${r}.tmp`;
+        job.state.progress = 0.65 + (r / 4) * 0.2;
+        job.state.message  = `精细校准 (${r + 1}/4)`;
         sendEvent(jobId, job.state);
+
         try {
-          await new Promise((resolve, reject) => {
-            const proc = spawn(COMPRESS_BINARY, [
-              inputPath, tmpRefine,
-              String(midScale.toFixed(4)), String(midQuality.toFixed(4))
-            ]);
-            proc.on("close", (code) => code === 0 ? resolve() : reject(new Error(`refine failed`)));
-          });
+          await runGs(inputPath, tmpRefine, loPreset.settings, midDpi);
           const stat = await fsp.stat(tmpRefine);
-          if (stat.size <= targetBytes) {
-            // Closer to target from below — keep this, search higher quality
+
+          if (stat.size >= MIN_VALID_BYTES && stat.size <= targetBytes) {
+            // midDpi 达标 → 尝试更高 DPI（更好画质）
             await fsp.rename(tmpRefine, outputPath);
-            resultBytes = stat.size;
-            ratio = resultBytes / originalBytes;
-            hi = { scale: midScale, quality: midQuality };
+            resultBytes    = stat.size;
+            ratio          = resultBytes / originalBytes;
+            bestValidPath  = outputPath;
+            bestValidBytes = resultBytes;
+            loDpi = midDpi;
           } else {
-            // Still above target — lower quality
-            lo = { scale: midScale, quality: midQuality };
+            // midDpi 超目标 → 降低 DPI
+            hiDpi = midDpi;
             try { fs.unlinkSync(tmpRefine); } catch {}
           }
         } catch {
@@ -249,64 +266,41 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
       }
     }
 
-    if (!resultBytes && lastOutput) {
-      rasterMode = true;
-      const stat = await fsp.stat(lastOutput);
-      if (stat.size <= targetBytes * 1.5) {
-        await fsp.rename(lastOutput, outputPath);
-        resultBytes = stat.size;
-        ratio = resultBytes / originalBytes;
-      } else {
-        for (let i = 0; i < RASTER_STEPS.length; i++) {
-          const step = RASTER_STEPS[i];
-          job.state.progress = 0.7 + (i / RASTER_STEPS.length) * 0.25;
-          job.state.message = `深度优化中 (${i + 1}/${RASTER_STEPS.length})`;
-          sendEvent(jobId, job.state);
-
-          const tmpOut = `${outputPath}.r${i}.tmp`;
-          try {
-            await new Promise((resolve, reject) => {
-              const proc = spawn(RASTER_BINARY, [
-                lastOutput || inputPath, tmpOut,
-                String(step.dpi), String(step.quality), step.grayscale ? "1" : "0"
-              ]);
-              proc.on("close", (code) => code === 0 ? resolve() : reject(new Error(`raster failed ${code}`)));
-            });
-
-            const stat = await fsp.stat(tmpOut);
-            if (stat.size <= targetBytes || i === RASTER_STEPS.length - 1) {
-              await fsp.rename(tmpOut, outputPath);
-              resultBytes = stat.size;
-              ratio = resultBytes / originalBytes;
-              try { if (lastOutput && lastOutput !== inputPath) fs.unlinkSync(lastOutput); } catch {}
-              break;
-            }
-            try { fs.unlinkSync(tmpOut); } catch {}
-          } catch {
-            try { fs.unlinkSync(tmpOut); } catch {}
-          }
-        }
+    // ── 最终兜底：目标无法达到时返回最小有效结果 ─────────────────────────
+    if (resultBytes === null && bestValidPath && bestValidBytes < Infinity) {
+      if (bestValidPath !== outputPath) {
+        await fsp.rename(bestValidPath, outputPath);
       }
+      resultBytes = bestValidBytes;
+      ratio       = resultBytes / originalBytes;
     }
 
-    if (!resultBytes) {
-      throw new Error("压缩失败，请重试");
+    // ── 防止结果比原文件更大（Ghostscript 对已高度压缩的 PDF 重编码会膨胀）
+    // 若最终结果 >= 原文件，直接以原文件作为输出（"最好结果就是原文件"）
+    if (resultBytes !== null && resultBytes >= originalBytes) {
+      await fsp.copyFile(inputPath, outputPath);
+      resultBytes = originalBytes;
+      ratio       = 1;
     }
 
-    job.state.progress = 1;
-    job.state.status = "done";
-    job.state.message = "压缩完成";
-    job.state.resultBytes = resultBytes;
-    job.state.ratio = ratio;
+    if (resultBytes === null) throw new Error("压缩失败，请重试");
+
+    const reachedTarget = resultBytes <= targetBytes;
+    job.state.progress     = 1;
+    job.state.status       = "done";
+    job.state.message      = reachedTarget
+      ? "压缩完成"
+      : "已尽力压缩——文件内容空间有限，当前结果为可在不损坏内容前提下的最小体积";
+    job.state.resultBytes  = resultBytes;
+    job.state.ratio        = ratio;
     job.state.downloadName = downloadName;
-    job.state.rasterMode = rasterMode;
     sendEvent(jobId, job.state);
 
   } catch (error) {
-    job.state.status = "error";
+    job.state.status   = "error";
     job.state.progress = 1;
-    job.state.message = "压缩失败";
-    job.state.error = error.message;
+    job.state.message  = "压缩失败";
+    job.state.error    = error.message;
     sendEvent(jobId, job.state);
   }
 }
@@ -350,7 +344,7 @@ async function handleApiRequest(req, res, url) {
   if (url.pathname === "/api/config" && req.method === "GET") {
     json(res, 200, {
       siteName: "TinyPDF",
-      maxUploadMB: 250,
+      maxUploadMB: MAX_UPLOAD_MB,
       adProvider: "mock",
       freePerDay: 3
     });
@@ -370,7 +364,17 @@ async function handleApiRequest(req, res, url) {
       return;
     }
 
-    const parts = await handleMultipart(req, boundaryMatch[1], 250 * 1024 * 1024);
+    let parts;
+    try {
+      parts = await handleMultipart(req, boundaryMatch[1], MAX_UPLOAD_MB * 1024 * 1024);
+    } catch (e) {
+      if (e.message === "file too large") {
+        sendError(res, 413, "FILE_TOO_LARGE", `文件过大，最大支持 ${MAX_UPLOAD_MB}MB`);
+      } else {
+        sendError(res, 400, "BAD_REQUEST", "上传解析失败，请重试");
+      }
+      return;
+    }
     const pdfPart = parts.find(p => p.name === "pdf");
     const targetMBPart = parts.find(p => p.name === "targetMB");
 
@@ -382,6 +386,19 @@ async function handleApiRequest(req, res, url) {
     const targetMB = parseFloat(targetMBPart.content.toString("utf8"));
     if (!Number.isFinite(targetMB) || targetMB <= 0) {
       sendError(res, 400, "BAD_REQUEST", "请输入有效的目标大小");
+      return;
+    }
+
+    // PDF 魔数校验：拒绝非 PDF 内容（防止任意文件上传）
+    if (!pdfPart.content.slice(0, 5).equals(Buffer.from("%PDF-"))) {
+      sendError(res, 400, "INVALID_FILE", "请上传有效的 PDF 文件");
+      return;
+    }
+
+    // 并发任务数限制（防内存/磁盘 DoS）
+    const activeJobs = [...jobs.values()].filter(j => j.state.status === "processing").length;
+    if (activeJobs >= MAX_CONCURRENT_JOBS) {
+      sendError(res, 429, "TOO_BUSY", "服务器繁忙，请稍后重试");
       return;
     }
 
@@ -419,7 +436,7 @@ async function handleApiRequest(req, res, url) {
       ...job.state,
       config: {
         siteName: "TinyPDF",
-        maxUploadMB: 250
+        maxUploadMB: MAX_UPLOAD_MB
       }
     });
     return;
@@ -462,11 +479,20 @@ async function handleApiRequest(req, res, url) {
       return;
     }
 
-    const stat = await fsp.stat(job.outputPath);
+    let stat;
+    try {
+      stat = await fsp.stat(job.outputPath);
+    } catch {
+      sendError(res, 404, "NOT_FOUND", "文件已过期，请重新压缩");
+      return;
+    }
+    const safeName = job.state.downloadName || "compressed.pdf";
+    const encodedName = encodeURIComponent(safeName);
     res.writeHead(200, {
       "Content-Type": "application/pdf",
       "Content-Length": stat.size,
-      "Content-Disposition": `attachment; filename="${encodeURIComponent(job.state.downloadName || "compressed.pdf")}"`
+      // RFC 6266 / RFC 5987：filename* 支持非 ASCII，filename 做 ASCII 兜底
+      "Content-Disposition": `attachment; filename="compressed.pdf"; filename*=UTF-8''${encodedName}`
     });
     const readStream = fs.createReadStream(job.outputPath);
     readStream.pipe(res);
@@ -477,6 +503,7 @@ async function handleApiRequest(req, res, url) {
 }
 
 function json(res, statusCode, payload, extraHeaders = {}) {
+  setSecurityHeaders(res);
   res.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
     ...extraHeaders
@@ -516,6 +543,7 @@ async function handleStatic(req, res, url) {
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || "application/octet-stream";
 
+    setSecurityHeaders(res);
     res.writeHead(200, {
       "Content-Type": contentType,
       "Content-Length": stat.size
@@ -544,9 +572,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 async function main() {
-  await buildSwiftBinaries();
   server.listen(PORT, HOST, () => {
-    console.log(`PDF compress web app running at http://${HOST}:${PORT}`);
+    console.log(`TinyPDF running at http://${HOST}:${PORT}`);
   });
 }
 

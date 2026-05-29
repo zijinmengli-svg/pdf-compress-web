@@ -33,6 +33,9 @@ Thumbs.db
 *.swo
 *~
 
-# Skill package (optional)
-skill-package/
-package-lock.json
+# Claude Code settings
+.claude/
+
+# Reports / releases (local only)
+reports/
+releases/

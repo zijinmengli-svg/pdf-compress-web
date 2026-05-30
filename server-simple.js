@@ -13,12 +13,17 @@ const HOST = process.env.HOST || "0.0.0.0";
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 
-const MAX_UPLOAD_MB    = 100;
+const MAX_UPLOAD_MB    = 100;   // 硬上限：超出直接 413 拒绝（服务端强制，不可绕过）
 // ── 运营配置（通过 Railway 环境变量控制，无需改代码）────────────────────────
-// FREE_PER_DAY  每日免费压缩次数（默认 3）
-// AD_ENABLED    是否启用广告弹窗（默认 false，设为 "true" 开启）
-const FREE_PER_DAY_CFG = Math.max(1, Number(process.env.FREE_PER_DAY) || 3);
-const AD_ENABLED_CFG   = process.env.AD_ENABLED === "true";
+// LARGE_FILE_MB         免费无摩擦阈值（默认 40）。超过此值的文件视为"大文件"：
+//                       · 始终记录到 GA（评估大文件需求 / 是否值得升级服务器）
+//                       · 当 AD_ENABLED=true 时需看广告解锁（前期未接广告时不拦截，仅记录）
+// AD_ENABLED            是否启用广告门（默认 false）。false 时大文件照常免费压缩。
+// MAX_INFLIGHT_UPLOADS  同时解析中的上传数上限（默认 2）。上传阶段会把整个文件读入内存，
+//                       多个大文件并发会 OOM；超出立即 429 优雅排队。
+const LARGE_FILE_MB        = Math.max(1, Number(process.env.LARGE_FILE_MB) || 40);
+const AD_ENABLED_CFG       = process.env.AD_ENABLED === "true";
+const MAX_INFLIGHT_UPLOADS = Math.max(1, Number(process.env.MAX_INFLIGHT_UPLOADS) || 2);
 
 // ── 服务端 GA4 Measurement Protocol ─────────────────────────────────────────
 // 从 Railway（欧洲，不被墙）直连上报，绕开客户端 gtag / Cloudflare proxy / 中国网络的
@@ -76,6 +81,7 @@ function sendGaEvent(clientId, name, params) {
 
 const jobs = new Map();
 const eventStreams = new Map();
+let inflightUploads = 0; // 正在解析中的上传数（内存保护用，见 MAX_INFLIGHT_UPLOADS）
 
 function bytesToMB(bytes) {
   return Number((bytes / 1024 / 1024).toFixed(2));
@@ -593,7 +599,7 @@ async function handleMultipart(req, boundary, maxSize) {
 async function handleApiRequest(req, res, url) {
   if (url.pathname === "/api/config" && req.method === "GET") {
     json(res, 200, {
-      freePerDay:  FREE_PER_DAY_CFG,
+      largeFileMB: LARGE_FILE_MB,
       adsEnabled:  AD_ENABLED_CFG,
       maxUploadMB: MAX_UPLOAD_MB
     });
@@ -613,83 +619,108 @@ async function handleApiRequest(req, res, url) {
       return;
     }
 
-    let parts;
-    try {
-      parts = await handleMultipart(req, boundaryMatch[1], MAX_UPLOAD_MB * 1024 * 1024);
-    } catch (e) {
-      if (e.message === "file too large") {
-        sendError(res, 413, "FILE_TOO_LARGE", `文件过大，最大支持 ${MAX_UPLOAD_MB}MB`);
-      } else {
-        sendError(res, 400, "BAD_REQUEST", "上传解析失败，请重试");
-      }
-      return;
-    }
-    const pdfPart = parts.find(p => p.name === "pdf");
-    const targetMBPart = parts.find(p => p.name === "targetMB");
-
-    if (!pdfPart || !pdfPart.filename || !targetMBPart) {
-      sendError(res, 400, "BAD_REQUEST", "请选择PDF文件并输入目标大小");
-      return;
-    }
-
-    const targetMB = parseFloat(targetMBPart.content.toString("utf8"));
-    if (!Number.isFinite(targetMB) || targetMB <= 0) {
-      sendError(res, 400, "BAD_REQUEST", "请输入有效的目标大小");
-      return;
-    }
-
-    // PDF 魔数校验：拒绝非 PDF 内容（防止任意文件上传）
-    if (!pdfPart.content.slice(0, 5).equals(Buffer.from("%PDF-"))) {
-      sendError(res, 400, "INVALID_FILE", "请上传有效的 PDF 文件");
-      return;
-    }
-
-    // 并发任务数限制（防内存/磁盘 DoS）
-    const activeJobs = [...jobs.values()].filter(j => j.state.status === "processing").length;
-    if (activeJobs >= MAX_CONCURRENT_JOBS) {
+    // 在途上传内存保护：上传阶段会把整个文件读入内存，且发生在并发任务校验之前；
+    // 多个大文件同时上传会顶爆内存（OOM）。这里单独限制同时解析中的上传数，超出立即 429。
+    if (inflightUploads >= MAX_INFLIGHT_UPLOADS) {
       sendError(res, 429, "TOO_BUSY", "服务器繁忙，请稍后重试");
       return;
     }
+    inflightUploads++;
+    try {
+      let parts;
+      try {
+        parts = await handleMultipart(req, boundaryMatch[1], MAX_UPLOAD_MB * 1024 * 1024);
+      } catch (e) {
+        if (e.message === "file too large") {
+          sendError(res, 413, "FILE_TOO_LARGE", `文件过大，最大支持 ${MAX_UPLOAD_MB}MB`);
+        } else {
+          sendError(res, 400, "BAD_REQUEST", "上传解析失败，请重试");
+        }
+        return;
+      }
+      const pdfPart = parts.find(p => p.name === "pdf");
+      const targetMBPart = parts.find(p => p.name === "targetMB");
 
-    const jobId = generateJobId();
-    const inputPath = path.join(os.tmpdir(), `pdf-compress-${jobId}-input.pdf`);
-    const outputPath = path.join(os.tmpdir(), `pdf-compress-${jobId}-output.pdf`);
+      if (!pdfPart || !pdfPart.filename || !targetMBPart) {
+        sendError(res, 400, "BAD_REQUEST", "请选择PDF文件并输入目标大小");
+        return;
+      }
 
-    await fsp.writeFile(inputPath, pdfPart.content);
+      const targetMB = parseFloat(targetMBPart.content.toString("utf8"));
+      if (!Number.isFinite(targetMB) || targetMB <= 0) {
+        sendError(res, 400, "BAD_REQUEST", "请输入有效的目标大小");
+        return;
+      }
 
-    const job = {
-      id: jobId,
-      inputPath,
-      outputPath,
-      originalName: pdfPart.filename,
-      targetBytes: parseSizeToBytes(targetMB),
-      state: {
+      // PDF 魔数校验：拒绝非 PDF 内容（防止任意文件上传）
+      if (!pdfPart.content.slice(0, 5).equals(Buffer.from("%PDF-"))) {
+        sendError(res, 400, "INVALID_FILE", "请上传有效的 PDF 文件");
+        return;
+      }
+
+      // 并发任务数限制（防内存/磁盘 DoS）
+      const activeJobs = [...jobs.values()].filter(j => j.state.status === "processing").length;
+      if (activeJobs >= MAX_CONCURRENT_JOBS) {
+        sendError(res, 429, "TOO_BUSY", "服务器繁忙，请稍后重试");
+        return;
+      }
+
+      const jobId = generateJobId();
+      const inputPath = path.join(os.tmpdir(), `pdf-compress-${jobId}-input.pdf`);
+      const outputPath = path.join(os.tmpdir(), `pdf-compress-${jobId}-output.pdf`);
+      const uploadBytes = pdfPart.content.length;
+      const clientId = gaClientId(req);
+
+      await fsp.writeFile(inputPath, pdfPart.content);
+
+      // 服务端记录每次上传的大小：从服务器直发 GA，不受客户端网络/cookie 影响，size 维度可靠。
+      // 用于后期评估"大文件需求是否足够多 → 是否值得花钱升级服务器 / 上付费档"。
+      const sizeMB  = uploadBytes / 1048576;
+      const isLarge = sizeMB > LARGE_FILE_MB;
+      sendGaEvent(clientId, "pdf_upload", {
+        size_mb: Math.round(sizeMB * 10) / 10,
+        size_bucket: !isLarge ? `0-${LARGE_FILE_MB}` : (sizeMB <= 75 ? `${LARGE_FILE_MB}-75` : "75-100"),
+        is_large: isLarge ? 1 : 0,
+        target_mb: targetMB,
+        ads_enabled: AD_ENABLED_CFG ? 1 : 0
+      });
+
+      const job = {
         id: jobId,
-        status: "processing",
-        progress: 0.05,
-        message: "文件已上传",
-        originalBytes: pdfPart.content.length,
+        inputPath,
+        outputPath,
+        originalName: pdfPart.filename,
         targetBytes: parseSizeToBytes(targetMB),
-        resultBytes: null,
-        ratio: null
-      }
-    };
+        state: {
+          id: jobId,
+          status: "processing",
+          progress: 0.05,
+          message: "文件已上传",
+          originalBytes: uploadBytes,
+          targetBytes: parseSizeToBytes(targetMB),
+          resultBytes: null,
+          ratio: null
+        }
+      };
 
-    job.gaClientId = gaClientId(req); // 服务端 GA 上报用，复用客户端 _ga cookie
+      job.gaClientId = clientId; // 服务端 GA 上报用，复用客户端 _ga cookie
 
-    jobs.set(jobId, job);
-    eventStreams.set(jobId, []);
+      jobs.set(jobId, job);
+      eventStreams.set(jobId, []);
 
-    setTimeout(() => compressPdf(jobId, inputPath, parseSizeToBytes(targetMB), pdfPart.filename), 0);
-    setTimeout(() => cleanupJob(jobId), 60 * 60 * 1000);
+      setTimeout(() => compressPdf(jobId, inputPath, parseSizeToBytes(targetMB), pdfPart.filename), 0);
+      setTimeout(() => cleanupJob(jobId), 60 * 60 * 1000);
 
-    json(res, 200, {
-      ...job.state,
-      config: {
-        siteName: "TinyPDF",
-        maxUploadMB: MAX_UPLOAD_MB
-      }
-    });
+      json(res, 200, {
+        ...job.state,
+        config: {
+          siteName: "TinyPDF",
+          maxUploadMB: MAX_UPLOAD_MB
+        }
+      });
+    } finally {
+      inflightUploads--; // 解析+写盘完成，大缓冲随本次请求作用域结束被 GC
+    }
     return;
   }
 

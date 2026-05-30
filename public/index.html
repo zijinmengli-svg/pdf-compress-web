@@ -32,9 +32,7 @@
       <header class="topbar">
         <span class="eyebrow">TinyPDF</span>
         <div class="usage-bar">
-          <span class="usage-badge" id="usage-display" aria-live="polite">
-            今日剩余 <span id="usage-remaining">--</span>/3 次数
-          </span>
+          <span class="usage-badge" id="usage-display" aria-live="polite">免费不限次 · 单文件 ≤ 100MB</span>
         </div>
       </header>
 
@@ -106,9 +104,9 @@
     <div id="ad-modal" class="modal-overlay">
       <div class="modal-box">
         <button type="button" class="modal-close" id="ad-modal-close">×</button>
-        <h2>今日免费次数已用完</h2>
+        <h2>大文件需观看广告解锁</h2>
         <p style="color:var(--muted);font-size:14px;margin:8px 0 16px">
-          观看以下内容后可解锁 1 次压缩，或明天再来（每日自动重置）。
+          此文件较大，观看一段广告即可解锁本次压缩。
         </p>
         <div id="ad-slot-container" style="
           width:300px;height:250px;margin:0 auto 16px;
@@ -124,16 +122,16 @@
         </p>
         <p class="modal-error" id="ad-modal-error"></p>
         <div class="action-row" style="justify-content:center;gap:12px;flex-wrap:nowrap">
-          <button type="button" class="btn-secondary" id="ad-tomorrow-btn" style="flex:1">明天再来</button>
+          <button type="button" class="btn-secondary" id="ad-tomorrow-btn" style="flex:1">取消</button>
           <button type="button" id="ad-claim-btn" disabled style="flex:2">请观看广告...</button>
         </div>
-        <p class="modal-tip" style="margin-top:8px">每日最多可通过广告额外获得 10 次</p>
+        <p class="modal-tip" style="margin-top:8px">小文件始终免费、不限次数</p>
       </div>
     </div>
 
     <!-- Toast 提示（无广告模式降级用） -->
     <div id="toast" class="toast" hidden></div>
 
-    <script src="/app-simple.js?v=1.2.2" defer></script>
+    <script src="/app-simple.js?v=1.2.3" defer></script>
   </body>
 </html>

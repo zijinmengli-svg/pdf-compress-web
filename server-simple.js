@@ -12,17 +12,6 @@ const HOST = process.env.HOST || "0.0.0.0";
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 
-// ── Ghostscript 压缩参数 ────────────────────────────────────────────────────
-// 5档预设：从高质量（大文件）到低质量（小文件）依次尝试，找到第一个 <= 目标大小的预设后
-// 在它和上一档之间做二分精细校准（最多 4 轮），将结果收敛到尽量接近目标。
-const GS_PRESETS = [
-  { settings: "/prepress", dpi: 300 },
-  { settings: "/printer",  dpi: 200 },
-  { settings: "/ebook",    dpi: 150 },
-  { settings: "/screen",   dpi: 96  },
-  { settings: "/screen",   dpi: 72  },
-];
-
 const MAX_UPLOAD_MB    = 100;
 // ── 运营配置（通过 Railway 环境变量控制，无需改代码）────────────────────────
 // FREE_PER_DAY  每日免费压缩次数（默认 3）
@@ -79,73 +68,266 @@ async function checkPdf(filePath) {
   return { valid: true, encrypted };
 }
 
-// ── Ghostscript 压缩调用 ────────────────────────────────────────────────────
-async function runGsJpeg(inputPath, outputPattern, dpi, quality) {
+// ── 强制栅格化压缩（无第三方依赖）─────────────────────────────────────────
+// 矢量压缩（pdfwrite）无法达标时，把每页用 Ghostscript 渲染成 JPEG，再手工重组
+// 为 PDF（DCTDecode 滤镜，不重新编码），通过自适应 DPI/质量搜索保证压到目标大小。
+// 代价：矢量文字变成像素图（可能模糊），仅作为最后兜底手段。
+
+// 解析 JPEG 的 SOF 标记，取出宽 / 高 / 通道数
+function parseJpegDims(buf) {
+  if (buf[0] !== 0xff || buf[1] !== 0xd8) throw new Error("not a JPEG");
+  let i = 2;
+  while (i < buf.length) {
+    if (buf[i] !== 0xff) { i++; continue; }
+    let marker = buf[i + 1];
+    while (marker === 0xff && i + 1 < buf.length) { i++; marker = buf[i + 1]; }
+    if ((marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) ||
+        (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf)) {
+      return { height: buf.readUInt16BE(i + 5), width: buf.readUInt16BE(i + 7), components: buf[i + 9] };
+    }
+    if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) { i += 2; continue; }
+    i += 2 + buf.readUInt16BE(i + 2);
+  }
+  throw new Error("JPEG SOF marker not found");
+}
+
+// 把多张 JPEG（每页一张）手工组装成 PDF（每张 JPEG 作为 DCTDecode 图像 XObject）
+function buildPdfFromJpegs(jpegBufs, dpi) {
+  const chunks = [];
+  let offset = 0;
+  const objOffsets = {};
+  const push = (b) => { chunks.push(b); offset += b.length; };
+  push(Buffer.from("%PDF-1.4\n%\xff\xff\xff\xff\n", "latin1"));
+
+  const numPages = jpegBufs.length;
+  let objId = 3; // 1 = Catalog, 2 = Pages
+  const perPage = [];
+  const pageObjIds = [];
+  for (let p = 0; p < numPages; p++) {
+    const imgId = objId++, contentId = objId++, pageId = objId++;
+    perPage.push({ imgId, contentId, pageId });
+    pageObjIds.push(pageId);
+  }
+  const writeObj = (id, body) => {
+    objOffsets[id] = offset;
+    push(Buffer.concat([Buffer.from(`${id} 0 obj\n`, "latin1"), body, Buffer.from("\nendobj\n", "latin1")]));
+  };
+  writeObj(1, Buffer.from(`<< /Type /Catalog /Pages 2 0 R >>`, "latin1"));
+  writeObj(2, Buffer.from(`<< /Type /Pages /Count ${numPages} /Kids [${pageObjIds.map(id => `${id} 0 R`).join(" ")}] >>`, "latin1"));
+
+  for (let p = 0; p < numPages; p++) {
+    const jpeg = jpegBufs[p];
+    const { width, height, components } = parseJpegDims(jpeg);
+    const cs = components === 1 ? "/DeviceGray" : components === 4 ? "/DeviceCMYK" : "/DeviceRGB";
+    const { imgId, contentId, pageId } = perPage[p];
+    const wPt = (width / dpi) * 72, hPt = (height / dpi) * 72;
+
+    objOffsets[imgId] = offset;
+    push(Buffer.from(`${imgId} 0 obj\n`, "latin1"));
+    push(Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace ${cs} /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`, "latin1"));
+    push(jpeg);
+    push(Buffer.from("\nendstream\nendobj\n", "latin1"));
+
+    const content = `q\n${wPt.toFixed(2)} 0 0 ${hPt.toFixed(2)} 0 0 cm\n/Im0 Do\nQ\n`;
+    const contentBuf = Buffer.from(content, "latin1");
+    writeObj(contentId, Buffer.concat([Buffer.from(`<< /Length ${contentBuf.length} >>\nstream\n`, "latin1"), contentBuf, Buffer.from("endstream", "latin1")]));
+    writeObj(pageId, Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${wPt.toFixed(2)} ${hPt.toFixed(2)}] /Resources << /XObject << /Im0 ${imgId} 0 R >> >> /Contents ${contentId} 0 R >>`, "latin1"));
+  }
+
+  const totalObjs = objId;
+  const xrefOffset = offset;
+  let xrefStr = `xref\n0 ${totalObjs}\n0000000000 65535 f \n`;
+  for (let id = 1; id < totalObjs; id++) xrefStr += `${String(objOffsets[id] || 0).padStart(10, "0")} 00000 n \n`;
+  push(Buffer.from(xrefStr, "latin1"));
+  push(Buffer.from(`trailer\n<< /Size ${totalObjs} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`, "latin1"));
+  return Buffer.concat(chunks);
+}
+
+// 用 Ghostscript 把 PDF 每页渲染成 JPEG → 重组为 PDF，返回 PDF Buffer
+async function rasterizeToJpegPdf(inputPath, dpi, quality) {
+  const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), "tinypdf-raster-"));
+  try {
+    const pattern = path.join(tmpDir, "p-%04d.jpg");
+    await new Promise((resolve, reject) => {
+      const proc = spawn("gs", [
+        "-sDEVICE=jpeg", `-r${dpi}`, `-dJPEGQ=${quality}`,
+        "-dNOPAUSE", "-dBATCH", "-dQUIET", `-sOutputFile=${pattern}`, inputPath,
+      ]);
+      const err = [];
+      proc.stderr.on("data", (d) => err.push(d));
+      proc.on("close", (c) => c === 0 ? resolve() : reject(new Error(`gs jpeg exited ${c}: ${Buffer.concat(err).toString().slice(0, 200)}`)));
+    });
+    const files = (await fsp.readdir(tmpDir)).filter(f => /^p-\d+\.jpg$/.test(f)).sort();
+    if (files.length === 0) throw new Error("rasterize produced no pages");
+    const bufs = [];
+    for (const f of files) bufs.push(await fsp.readFile(path.join(tmpDir, f)));
+    return buildPdfFromJpegs(bufs, dpi);
+  } finally {
+    try { await fsp.rm(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
+// 探测 + 对数-对数 DPI 搜索 + 质量阶梯 + 绝对地板。
+// 自高到低搜索，第一个 <= 目标的结果即返回（达标前提下画质最好）。
+// 若目标物理上不可达，返回能产出的最小结果（尽力而为，绝不返回原文件）。
+async function forceRasterToTarget(jobId, job, inputPath, targetBytes) {
+  const PROBE_DPI = 72, PROBE_Q = 45, DPI_FLOOR = 8;
+  const pts = [];          // {dpi, bytes} 用于对数-对数拟合
+  let smallest = null;     // 目标不可达时的兜底（最小结果）
+  let step = 0;
+  const announce = () => {
+    job.state.progress = Math.min(0.97, 0.85 + step * 0.02);
+    job.state.message  = "强力压缩中";
+    sendEvent(jobId, job.state);
+    step++;
+  };
+  const tryPass = async (d, qq) => {
+    try {
+      const p = await rasterizeToJpegPdf(inputPath, d, qq);
+      if (p && p.length >= 64) { if (!smallest || p.length < smallest.length) smallest = p; return p; }
+    } catch {}
+    return null;
+  };
+
+  // 探测：若连探测都失败，说明该文件无法栅格化，抛错交由上层回退
+  announce();
+  let dpi = PROBE_DPI, q = PROBE_Q;
+  let pdf = await tryPass(dpi, q);
+  if (!pdf) throw new Error("栅格化失败");
+  pts.push({ dpi, bytes: pdf.length });
+  if (pdf.length <= targetBytes) return pdf;
+
+  // DPI 搜索（探测质量不变；自高到低，第一个达标即最佳画质）
+  for (let attempt = 0; attempt < 5 && dpi > DPI_FLOOR; attempt++) {
+    let next;
+    if (pts.length < 2) {
+      next = dpi * Math.sqrt(targetBytes / pdf.length);        // 单点 → 假设 size ∝ dpi²
+    } else {
+      const a = pts[pts.length - 2], b = pts[pts.length - 1];  // 两点对数-对数求局部指数
+      const n = Math.log(a.bytes / b.bytes) / Math.log(a.dpi / b.dpi);
+      const nn = (!isFinite(n) || n < 0.5) ? 2 : n;
+      next = b.dpi * Math.pow(targetBytes / b.bytes, 1 / nn);
+    }
+    let nextDpi = Math.max(DPI_FLOOR, Math.floor(next * 0.97));
+    if (nextDpi >= dpi) nextDpi = Math.max(DPI_FLOOR, dpi - 4); // 保证每轮都在下降
+    dpi = nextDpi;
+    announce();
+    const got = await tryPass(dpi, q);
+    if (!got) break;
+    pdf = got;
+    pts.push({ dpi, bytes: pdf.length });
+    if (pdf.length <= targetBytes) return pdf;
+  }
+
+  // 已到 DPI 地板仍超标 → 在地板上降质量（大步收敛）
+  for (const q2 of [30, 18, 10]) {
+    announce();
+    const got = await tryPass(DPI_FLOOR, q2);
+    if (got && got.length <= targetBytes) return got;
+  }
+
+  // 绝对地板：能产出的最小结果
+  announce();
+  const got = await tryPass(6, 8);
+  if (got && got.length <= targetBytes) return got;
+
+  return smallest; // 物理不可达 → 尽力而为的最小结果
+}
+
+// 矢量保真的连续质量旋钮：pdfwrite + 关闭 JPEG 直通 + 强制 DCT 重编码 + 自定义 QFactor。
+// QFactor 越小画质越高、体积越大（与体积近似幂律关系），可平滑命中任意目标体积，
+// 且文字/矢量保持清晰（不栅格化）。resCap 限制图像分辨率上限（默认 300，超过才下采样）。
+async function runGsQf(inputPath, outputPath, qf, resCap) {
   return new Promise((resolve, reject) => {
+    const ps =
+      `<< /ColorImageDict << /QFactor ${qf} /Blend 1 /HSamples [2 1 1 2] /VSamples [2 1 1 2] >> ` +
+      `/GrayImageDict << /QFactor ${qf} /Blend 1 /HSamples [2 1 1 2] /VSamples [2 1 1 2] >> >> setdistillerparams`;
     const args = [
-      "-sDEVICE=jpeg",
-      `-r${dpi}`,
-      `-dJPEGQ=${quality}`,
-      "-dNOPAUSE", "-dQUIET", "-dBATCH",
-      `-sOutputFile=${outputPattern}`,
-      inputPath
+      "-sDEVICE=pdfwrite",
+      "-dCompatibilityLevel=1.5",
+      "-dPDFSETTINGS=/prepress",
+      "-dNOPAUSE", "-dBATCH", "-dQUIET",
+      "-dPassThroughJPEGImages=false",
+      "-dAutoFilterColorImages=false", "-dColorImageFilter=/DCTEncode",
+      "-dAutoFilterGrayImages=false", "-dGrayImageFilter=/DCTEncode",
+      "-dDownsampleColorImages=true", `-dColorImageResolution=${resCap}`,
+      "-dDownsampleGrayImages=true", `-dGrayImageResolution=${resCap}`,
+      `-sOutputFile=${outputPath}`,
+      "-c", ps, "-f", inputPath,
     ];
     const proc = spawn("gs", args);
     const errChunks = [];
     proc.stderr.on("data", (d) => errChunks.push(d));
     proc.on("close", (code) => {
       if (code === 0) resolve();
-      else reject(new Error(`gs jpeg exited ${code}: ${Buffer.concat(errChunks).toString().slice(0, 300)}`));
+      else reject(new Error(`gs qf exited ${code}: ${Buffer.concat(errChunks).toString("utf8").slice(0, 200)}`));
     });
   });
 }
 
-async function runGsCombine(imageFiles, outputPath) {
-  return new Promise((resolve, reject) => {
-    const args = [
-      "-sDEVICE=pdfwrite",
-      "-dNOPAUSE", "-dQUIET", "-dBATCH",
-      `-sOutputFile=${outputPath}`,
-      ...imageFiles
-    ];
-    const proc = spawn("gs", args);
-    const errChunks = [];
-    proc.stderr.on("data", (d) => errChunks.push(d));
-    proc.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`gs combine exited ${code}: ${Buffer.concat(errChunks).toString().slice(0, 300)}`));
-    });
-  });
-}
+// 连续质量搜索：在 QFactor 维度做带括的预测式搜索，找出 <= 目标体积的最大结果
+// （即目标内最接近、最清晰的矢量保真结果）。
+//  - 若最高画质（QF_BEST）仍 <= 目标：直接返回它（无法更优，已是最清晰）。
+//  - 若最低画质（QF_WORST）仍 > 目标：返回 null（矢量重编码到不了，交由栅格化兜底）。
+//  - 否则在 (QF_BEST, QF_WORST) 间用幂律插值快速收敛。
+// 返回 { path, bytes } 或 null。中间临时文件即用即删，只保留当前最优。
+async function qfactorSearch(jobId, job, inputPath, outBase, targetBytes, minValidBytes) {
+  const QF_BEST = 0.02;   // 最高画质（体积最大）
+  const QF_WORST = 3.0;   // 最低画质（体积最小）
+  let best = null;        // { path, bytes, qf } —— <= 目标内体积最大者
+  let over = null;        // { qf, bytes } —— > 目标中 qf 最大者（用于括住目标）
+  let runIdx = 0, step = 0;
 
-async function runGs(inputPath, outputPath, settings, dpi) {
-  return new Promise((resolve, reject) => {
-    const args = [
-      "-sDEVICE=pdfwrite",
-      "-dCompatibilityLevel=1.4",
-      "-dNOPAUSE", "-dQUIET", "-dBATCH",
-      `-dPDFSETTINGS=${settings}`,
-      "-dDownsampleColorImages=true",
-      "-dDownsampleGrayImages=true",
-      "-dDownsampleMonoImages=true",
-      `-dColorImageResolution=${dpi}`,
-      `-dGrayImageResolution=${dpi}`,
-      `-dMonoImageResolution=${Math.min(600, dpi * 2)}`,
-      `-sOutputFile=${outputPath}`,
-      inputPath
-    ];
-    const proc = spawn("gs", args);
-    const errChunks = [];
-    proc.stderr.on("data", (d) => errChunks.push(d));
-    proc.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        const msg = Buffer.concat(errChunks).toString("utf8").slice(0, 300);
-        reject(new Error(`gs exited ${code}: ${msg}`));
-      }
-    });
-  });
+  const announce = () => {
+    job.state.progress = Math.min(0.8, 0.12 + step * 0.1);
+    job.state.message  = "精准压缩中";
+    sendEvent(jobId, job.state);
+    step++;
+  };
+
+  // 跑一档 QFactor，分类入 best / over，即用即删非最优文件。返回字节数或 null。
+  const runQf = async (qf) => {
+    announce();
+    const out = `${outBase}.qf${runIdx++}.tmp`;
+    try { await runGsQf(inputPath, out, qf, 300); }
+    catch { try { fs.unlinkSync(out); } catch {} return null; }
+    let st; try { st = await fsp.stat(out); } catch { return null; }
+    if (st.size < minValidBytes) { try { fs.unlinkSync(out); } catch {} return null; }
+    if (st.size > targetBytes) {
+      if (!over || qf > over.qf) over = { qf, bytes: st.size };
+      try { fs.unlinkSync(out); } catch {}
+    } else if (!best || st.size > best.bytes) {
+      if (best && best.path !== out) { try { fs.unlinkSync(best.path); } catch {} }
+      best = { path: out, bytes: st.size, qf };
+    } else {
+      try { fs.unlinkSync(out); } catch {}
+    }
+    return st.size;
+  };
+
+  // 边界探测
+  const sBest = await runQf(QF_BEST);
+  if (sBest !== null && sBest <= targetBytes) return best;   // 最高画质已达标 → 最优
+  const sWorst = await runQf(QF_WORST);
+  if (sWorst === null) return best;                          // 最低画质都失败
+  if (sWorst > targetBytes) return null;                     // 矢量重编码到不了 → 交栅格化
+
+  // 预测式带括搜索（幂律：size = k * qf^(-p)）
+  for (let it = 0; it < 5; it++) {
+    if (!over || !best) break;
+    if (best.bytes >= targetBytes * 0.96) break;             // 足够接近目标
+    if (best.qf - over.qf < 0.003) break;                    // 区间过小
+    const p = Math.log(over.bytes / best.bytes) / Math.log(best.qf / over.qf);
+    let q = (!isFinite(p) || p <= 0)
+      ? (over.qf + best.qf) / 2                               // 退化 → 二分
+      : over.qf * Math.pow(over.bytes / targetBytes, 1 / p); // 幂律预测命中目标
+    const loB = over.qf + (best.qf - over.qf) * 0.05;
+    const hiB = best.qf - (best.qf - over.qf) * 0.05;
+    q = Math.min(hiB, Math.max(loB, q));                     // 严格夹在括内
+    const s = await runQf(q);
+    if (s === null) break;
+  }
+  return best;
 }
 
 function generateJobId() {
@@ -182,11 +364,9 @@ function cleanupJob(jobId) {
   if (job) {
     try { fs.unlinkSync(job.inputPath); } catch {}
     try { fs.unlinkSync(job.outputPath); } catch {}
-    // 删除所有可能泄漏的中间临时文件
+    // 删除所有可能泄漏的中间临时文件（QFactor 搜索遗留）
     const base = job.outputPath;
-    for (let i = 0; i < 5; i++) { try { fs.unlinkSync(`${base}.p${i}.tmp`);  } catch {} } // 预设扫描
-    for (let r = 0; r < 4; r++) { try { fs.unlinkSync(`${base}.rf${r}.tmp`); } catch {} } // 二分精细
-    for (let ri = 0; ri < 6; ri++) { try { fs.unlinkSync(`${base}.r${ri}.pdf`); } catch {} } // 栅格化
+    for (let i = 0; i < 10; i++) { try { fs.unlinkSync(`${base}.qf${i}.tmp`); } catch {} }
   }
   jobs.delete(jobId);
   eventStreams.delete(jobId);
@@ -223,155 +403,47 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     let ratio          = null;
     let bestValidPath  = null;
     let bestValidBytes = Infinity;
-    let foundPresetIdx = -1;
 
-    function registerBestValid(filePath, fileSize) {
-      if (fileSize >= MIN_VALID_BYTES && fileSize < bestValidBytes) {
-        if (bestValidPath && bestValidPath !== outputPath && bestValidPath !== inputPath) {
-          try { fs.unlinkSync(bestValidPath); } catch {}
-        }
-        bestValidPath  = filePath;
-        bestValidBytes = fileSize;
-      }
+    // ── 原文件已不大于目标：无需压缩，原文件即最清晰结果 ──────────────────
+    if (originalBytes <= targetBytes) {
+      await fsp.copyFile(inputPath, outputPath);
+      resultBytes = originalBytes;
+      ratio       = 1;
     }
 
-    // ── Phase 1: 5档预设扫描（从高质量到低质量）──────────────────────────
-    // 找到第一个 <= 目标大小的档，同时记录上一档（超目标的最高质量档）
-    for (let i = 0; i < GS_PRESETS.length; i++) {
-      const preset = GS_PRESETS[i];
-      job.state.progress = 0.1 + (i / GS_PRESETS.length) * 0.55;
-      job.state.message  = `压缩中 (${i + 1}/${GS_PRESETS.length})`;
-      sendEvent(jobId, job.state);
-
-      const tmpOut = `${outputPath}.p${i}.tmp`;
+    // ── 主压缩：QFactor 连续质量搜索（矢量保真，目标内体积最大 = 最清晰）──
+    // 在 QFactor 维度预测式搜索，命中 <= 目标的最大体积；文字/矢量保持清晰不栅格化。
+    if (resultBytes === null) {
       try {
-        await runGs(inputPath, tmpOut, preset.settings, preset.dpi);
-        const stat = await fsp.stat(tmpOut);
-
-        if (stat.size < MIN_VALID_BYTES) {
-          try { fs.unlinkSync(tmpOut); } catch {}
-          break; // 更低档只会更差
-        }
-
-        registerBestValid(tmpOut, stat.size);
-
-        if (stat.size <= targetBytes) {
-          await fsp.rename(tmpOut, outputPath);
-          resultBytes    = stat.size;
+        const qres = await qfactorSearch(jobId, job, inputPath, outputPath, targetBytes, MIN_VALID_BYTES);
+        if (qres && qres.bytes >= MIN_VALID_BYTES) {
+          if (qres.path !== outputPath) await fsp.rename(qres.path, outputPath);
+          resultBytes    = qres.bytes;
           ratio          = resultBytes / originalBytes;
-          foundPresetIdx = i;
           bestValidPath  = outputPath;
           bestValidBytes = resultBytes;
-          break;
         }
-        // 超目标但有效 — 已通过 registerBestValid 保留
       } catch {
-        try { fs.unlinkSync(tmpOut); } catch {}
+        // 搜索失败 → 交由栅格化兜底
       }
     }
 
-    // ── Phase 2: 二分精细校准（在上一档 DPI 和当前档 DPI 之间细分）────────
-    // 最多 4 轮，每轮将区间缩小一半，找到尽量接近目标的最高 DPI（最好画质）
-    if (resultBytes !== null && foundPresetIdx > 0) {
-      const loPreset = GS_PRESETS[foundPresetIdx];     // 达标档（DPI 低）
-      const hiPreset = GS_PRESETS[foundPresetIdx - 1]; // 未达标档（DPI 高）
-      let loDpi = loPreset.dpi;
-      let hiDpi = hiPreset.dpi;
-
-      for (let r = 0; r < 4; r++) {
-        if (hiDpi - loDpi < 6) break; // 区间已足够小，停止
-        const midDpi    = Math.round((loDpi + hiDpi) / 2);
-        const tmpRefine = `${outputPath}.rf${r}.tmp`;
-        job.state.progress = 0.65 + (r / 4) * 0.2;
-        job.state.message  = `精细校准 (${r + 1}/4)`;
-        sendEvent(jobId, job.state);
-
-        try {
-          await runGs(inputPath, tmpRefine, loPreset.settings, midDpi);
-          const stat = await fsp.stat(tmpRefine);
-
-          if (stat.size >= MIN_VALID_BYTES && stat.size <= targetBytes) {
-            // midDpi 达标 → 尝试更高 DPI（更好画质）
-            await fsp.rename(tmpRefine, outputPath);
-            resultBytes    = stat.size;
-            ratio          = resultBytes / originalBytes;
-            bestValidPath  = outputPath;
-            bestValidBytes = resultBytes;
-            loDpi = midDpi;
-          } else {
-            // midDpi 超目标 → 降低 DPI
-            hiDpi = midDpi;
-            try { fs.unlinkSync(tmpRefine); } catch {}
-          }
-        } catch {
-          try { fs.unlinkSync(tmpRefine); } catch {}
-          break;
-        }
-      }
-    }
-
-    // ── Phase 3: 强制栅格化（矢量内容无法靠常规压缩达标时的最终手段）──────
-    // 将每页渲染成 JPEG 再合并为 PDF，可强制压缩任何类型的 PDF 到目标大小
+    // ── 兜底：矢量重编码到不了目标（最低画质仍超标）→ 强制栅格化 ──────────
+    // 每页渲染成 JPEG 再无依赖重组为 PDF。矢量文字会变成像素图（可能模糊），但保证达标。
+    // 仅在 QFactor 搜索未达标时触发。
     if (resultBytes === null || resultBytes > targetBytes) {
-      const RASTER_PRESETS = [
-        { dpi: 150, quality: 85 },
-        { dpi: 120, quality: 70 },
-        { dpi: 96,  quality: 55 },
-        { dpi: 72,  quality: 40 },
-        { dpi: 72,  quality: 20 },
-        { dpi: 48,  quality: 20 },
-      ];
-
-      const tmpDir  = path.dirname(outputPath);
-      const jobBase = path.basename(outputPath, ".pdf");
-
-      for (let ri = 0; ri < RASTER_PRESETS.length; ri++) {
-        if (resultBytes !== null && resultBytes <= targetBytes) break;
-        const { dpi, quality } = RASTER_PRESETS[ri];
-        job.state.progress = 0.85 + (ri / RASTER_PRESETS.length) * 0.12;
-        job.state.message  = `强力压缩中 (${ri + 1}/${RASTER_PRESETS.length})`;
-        sendEvent(jobId, job.state);
-
-        const pagePattern = path.join(tmpDir, `${jobBase}.r${ri}.p%04d.jpg`);
-        const rasterOut   = `${outputPath}.r${ri}.pdf`;
-
-        try {
-          await runGsJpeg(inputPath, pagePattern, dpi, quality);
-
-          const allFiles = await fsp.readdir(tmpDir);
-          const pageFiles = allFiles
-            .filter(f => f.startsWith(`${jobBase}.r${ri}.p`) && f.endsWith(".jpg"))
-            .sort()
-            .map(f => path.join(tmpDir, f));
-
-          if (pageFiles.length === 0) continue;
-
-          await runGsCombine(pageFiles, rasterOut);
-          for (const f of pageFiles) { try { fs.unlinkSync(f); } catch {} }
-
-          const stat = await fsp.stat(rasterOut);
-          registerBestValid(rasterOut, stat.size);
-
-          if (stat.size <= targetBytes) {
-            await fsp.rename(rasterOut, outputPath);
-            resultBytes    = stat.size;
-            ratio          = resultBytes / originalBytes;
-            bestValidPath  = outputPath;
-            bestValidBytes = resultBytes;
-            break;
-          }
-          try { fs.unlinkSync(rasterOut); } catch {}
-        } catch {
-          try {
-            const leftover = await fsp.readdir(tmpDir);
-            for (const f of leftover) {
-              if (f.startsWith(`${jobBase}.r${ri}.p`) && f.endsWith(".jpg")) {
-                try { fs.unlinkSync(path.join(tmpDir, f)); } catch {}
-              }
-            }
-          } catch {}
-          try { fs.unlinkSync(rasterOut); } catch {}
+      try {
+        const rasterPdf = await forceRasterToTarget(jobId, job, inputPath, targetBytes);
+        if (rasterPdf && rasterPdf.length >= MIN_VALID_BYTES) {
+          await fsp.writeFile(outputPath, rasterPdf);
+          resultBytes    = rasterPdf.length;
+          ratio          = resultBytes / originalBytes;
+          bestValidPath  = outputPath;
+          bestValidBytes = resultBytes;
+          job.state.rasterized = true; // 标记已栅格化 → 前端显示清晰度提示
         }
+      } catch {
+        // 栅格化失败 → 保留已有 bestValid，由下方兜底处理
       }
     }
 
@@ -384,8 +456,8 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
       ratio       = resultBytes / originalBytes;
     }
 
-    // ── 防止结果比原文件更大（Ghostscript 对已高度压缩的 PDF 重编码会膨胀）
-    // 若最终结果 >= 原文件，直接以原文件作为输出（"最好结果就是原文件"）
+    // ── 防止结果比原文件更大（边界情况：极小已压缩 PDF）─────────────────
+    // 仅在最终结果仍大于原文件时回退到原文件
     if (resultBytes !== null && resultBytes >= originalBytes) {
       await fsp.copyFile(inputPath, outputPath);
       resultBytes = originalBytes;
@@ -394,12 +466,15 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
 
     if (resultBytes === null) throw new Error("压缩失败，请重试");
 
-    const reachedTarget = resultBytes <= targetBytes;
+    const reachedTarget    = resultBytes <= targetBytes;
+    const noCompressNeeded = resultBytes >= originalBytes; // 已回退原文件：目标 ≥ 原文件
     job.state.progress     = 1;
     job.state.status       = "done";
-    job.state.message      = reachedTarget
-      ? "压缩完成"
-      : "已尽力压缩——文件内容空间有限，当前结果为可在不损坏内容前提下的最小体积";
+    job.state.message      = noCompressNeeded
+      ? "原文件已不大于目标大小，无需压缩"
+      : reachedTarget
+        ? "压缩完成"
+        : "已尽力压缩——文件内容空间有限，当前结果为可在不损坏内容前提下的最小体积";
     job.state.resultBytes  = resultBytes;
     job.state.ratio        = ratio;
     job.state.downloadName = downloadName;

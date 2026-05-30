@@ -234,7 +234,11 @@ function setStatus(state) {
   const percent = Math.round((state.progress || 0) * 100);
   statusPercent.textContent = `${percent}%`;
   progressFill.style.width  = `${percent}%`;
-  statusMessage.textContent  = state.error || state.message || "";
+  let msg = state.error || state.message || "";
+  if (state.status === "done" && state.rasterized) {
+    msg += (msg ? " " : "") + "友情提示：为压缩到目标大小，页面已转为图片，清晰度可能有所下降。";
+  }
+  statusMessage.textContent  = msg;
   setMetrics(state);
   downloadRow.hidden = state.status !== "done";
 }

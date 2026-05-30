@@ -1,4 +1,5 @@
 const http = require("http");
+const https = require("https");
 const fs = require("fs");
 const fsp = fs.promises;
 const path = require("path");
@@ -18,6 +19,60 @@ const MAX_UPLOAD_MB    = 100;
 // AD_ENABLED    是否启用广告弹窗（默认 false，设为 "true" 开启）
 const FREE_PER_DAY_CFG = Math.max(1, Number(process.env.FREE_PER_DAY) || 3);
 const AD_ENABLED_CFG   = process.env.AD_ENABLED === "true";
+
+// ── 服务端 GA4 Measurement Protocol ─────────────────────────────────────────
+// 从 Railway（欧洲，不被墙）直连上报，绕开客户端 gtag / Cloudflare proxy / 中国网络的
+// 所有不确定性。仅当配置了 GA_API_SECRET 时启用；未配置则静默跳过，不影响任何功能。
+//   GA_MEASUREMENT_ID  GA4 衡量 ID（默认沿用页面里的 G-EGP898J99G）
+//   GA_API_SECRET      GA4 后台 → 数据流 → Measurement Protocol API 密钥（在 Railway 环境变量里设置）
+//   GA_MP_ENDPOINT     上报端点基址（默认官方；可改为自有代理，测试时指向本地 mock）
+const GA_MEASUREMENT_ID = process.env.GA_MEASUREMENT_ID || "G-EGP898J99G";
+const GA_API_SECRET     = process.env.GA_API_SECRET || "";
+const GA_MP_ENDPOINT    = process.env.GA_MP_ENDPOINT || "https://www.google-analytics.com";
+
+// 复用客户端 _ga cookie 里的 client_id（便于会话拼接）；没有则生成一个。
+function gaClientId(req) {
+  const cookie = (req && req.headers && req.headers.cookie) || "";
+  const m = cookie.match(/_ga=GA\d+\.\d+\.(\d+\.\d+)/);
+  if (m) return m[1];
+  return `${Math.floor(Math.random() * 1e9)}.${Math.floor(Date.now() / 1000)}`;
+}
+
+// 构造 GA4 事件载荷（纯函数，便于测试）。session_id + engagement_time_msec 为 GA4
+// 报表正确归集活跃用户/会话所必需。
+function gaEventPayload(clientId, name, params) {
+  return {
+    client_id: clientId || `${Math.floor(Math.random() * 1e9)}.${Math.floor(Date.now() / 1000)}`,
+    events: [{
+      name,
+      params: {
+        session_id: String(Math.floor(Date.now() / 1800000)), // 30 分钟会话桶
+        engagement_time_msec: 100,
+        ...params,
+      },
+    }],
+  };
+}
+
+// 发送一个 GA4 事件（fire-and-forget：绝不阻塞主流程，出错只吞掉）。
+function sendGaEvent(clientId, name, params) {
+  if (!GA_API_SECRET) return;
+  try {
+    const u = new URL(GA_MP_ENDPOINT);
+    const transport = u.protocol === "http:" ? http : https;
+    const body = JSON.stringify(gaEventPayload(clientId, name, params));
+    const reqOut = transport.request({
+      method: "POST",
+      hostname: u.hostname,
+      port: u.port || undefined,
+      path: `/mp/collect?measurement_id=${encodeURIComponent(GA_MEASUREMENT_ID)}&api_secret=${encodeURIComponent(GA_API_SECRET)}`,
+      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
+    });
+    reqOut.on("error", () => {});
+    reqOut.write(body);
+    reqOut.end();
+  } catch {}
+}
 
 const jobs = new Map();
 const eventStreams = new Map();
@@ -480,12 +535,23 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     job.state.downloadName = downloadName;
     sendEvent(jobId, job.state);
 
+    // 服务端 GA 上报：压缩完成（真实用户行为，最可靠的业务数据）
+    sendGaEvent(job.gaClientId, "compress_complete", {
+      original_mb:    bytesToMB(originalBytes),
+      target_mb:      bytesToMB(targetBytes),
+      result_mb:      bytesToMB(resultBytes),
+      ratio:          Number((ratio || 0).toFixed(3)),
+      reached_target: reachedTarget ? 1 : 0,
+      rasterized:     job.state.rasterized ? 1 : 0,
+    });
+
   } catch (error) {
     job.state.status   = "error";
     job.state.progress = 1;
     job.state.message  = "压缩失败";
     job.state.error    = error.message;
     sendEvent(jobId, job.state);
+    sendGaEvent(job.gaClientId, "compress_error", { reason: String(error.message).slice(0, 100) });
   }
 }
 
@@ -608,6 +674,8 @@ async function handleApiRequest(req, res, url) {
         ratio: null
       }
     };
+
+    job.gaClientId = gaClientId(req); // 服务端 GA 上报用，复用客户端 _ga cookie
 
     jobs.set(jobId, job);
     eventStreams.set(jobId, []);
@@ -734,6 +802,18 @@ async function handleStatic(req, res, url) {
 
     const readStream = fs.createReadStream(filePath);
     readStream.pipe(res);
+
+    // 服务端 page_view：仅 HTML 文档 + 浏览器 UA（过滤健康检查/爬虫，避免噪声）
+    if (pathname === "/index.html") {
+      const ua = req.headers["user-agent"] || "";
+      if (/Mozilla|Chrome|Safari|Firefox|Edg/i.test(ua) &&
+          !/bot|crawl|spider|monitor|healthcheck|curl|wget|python-requests/i.test(ua)) {
+        sendGaEvent(gaClientId(req), "page_view", {
+          page_location: `https://${req.headers.host || "tinypdf.cn"}${url.pathname}`,
+          page_title: "TinyPDF",
+        });
+      }
+    }
   } catch {
     sendError(res, 404, "NOT_FOUND", "页面不存在");
   }

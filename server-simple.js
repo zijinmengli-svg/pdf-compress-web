@@ -35,12 +35,38 @@ const GA_MEASUREMENT_ID = process.env.GA_MEASUREMENT_ID || "G-EGP898J99G";
 const GA_API_SECRET     = process.env.GA_API_SECRET || "";
 const GA_MP_ENDPOINT    = process.env.GA_MP_ENDPOINT || "https://www.google-analytics.com";
 
-// 复用客户端 _ga cookie 里的 client_id（便于会话拼接）；没有则生成一个。
-function gaClientId(req) {
+// client_id 解析：优先复用客户端 gtag 的 _ga cookie（与客户端事件拼接），其次用我们自己
+// 种的第一方 tinypdf_cid cookie。两者都没有则返回 null（由 ensureClientId 决定是否新种）。
+function readClientId(req) {
   const cookie = (req && req.headers && req.headers.cookie) || "";
-  const m = cookie.match(/_ga=GA\d+\.\d+\.(\d+\.\d+)/);
-  if (m) return m[1];
+  const ga = cookie.match(/_ga=GA\d+\.\d+\.(\d+\.\d+)/);
+  if (ga) return ga[1];
+  const own = cookie.match(/(?:^|;\s*)tinypdf_cid=([\w.-]+)/);
+  if (own) return own[1];
+  return null;
+}
+
+function newClientId() {
   return `${Math.floor(Math.random() * 1e9)}.${Math.floor(Date.now() / 1000)}`;
+}
+
+// 只读取 client_id（读不到给一个临时随机值，不持久化）。用于无法写 Set-Cookie 的场合。
+function gaClientId(req) {
+  return readClientId(req) || newClientId();
+}
+
+// 解析或分配稳定 client_id：新访客生成一个并种第一方 cookie（第一方、本域、国内不被墙，
+// 同一浏览器从此稳定算作同一用户，修正国内无 _ga cookie 导致的用户数虚高）。
+// 必须在 res.writeHead 之前调用。
+function ensureClientId(req, res) {
+  const existing = readClientId(req);
+  if (existing) return existing;
+  const id = newClientId();
+  res.setHeader(
+    "Set-Cookie",
+    `tinypdf_cid=${id}; Path=/; Max-Age=63072000; SameSite=Lax; HttpOnly; Secure`
+  );
+  return id;
 }
 
 // 构造 GA4 事件载荷（纯函数，便于测试）。session_id + engagement_time_msec 为 GA4
@@ -813,6 +839,16 @@ const MIME_TYPES = {
   ".pdf": "application/pdf"
 };
 
+// 判定是否真实浏览器的页面导航（过滤健康检查/爬虫/预取，减少 page_view 噪声与用户数虚高）。
+function isRealBrowser(req) {
+  const ua = req.headers["user-agent"] || "";
+  if (!/Mozilla|Chrome|Safari|Firefox|Edg/i.test(ua)) return false;
+  if (/bot|crawl|spider|slurp|monitor|healthcheck|uptime|pingdom|curl|wget|python-requests|headless|lighthouse/i.test(ua)) return false;
+  const sfm = req.headers["sec-fetch-mode"];
+  if (sfm && sfm !== "navigate") return false; // 资源/预取/嵌入请求，非真实页面浏览
+  return true;
+}
+
 async function handleStatic(req, res, url) {
   let pathname = url.pathname;
   if (pathname === "/") pathname = "/index.html";
@@ -826,6 +862,14 @@ async function handleStatic(req, res, url) {
     const contentType = MIME_TYPES[ext] || "application/octet-stream";
 
     setSecurityHeaders(res);
+
+    // 真实浏览器访问首页：在写响应头之前解析/分配稳定 client_id（新访客种第一方 cookie），
+    // 供服务端 page_view 上报使用，修正国内用户因无 _ga cookie 每次被算作新用户的问题。
+    let pageViewCid = null;
+    if (pathname === "/index.html" && isRealBrowser(req)) {
+      pageViewCid = ensureClientId(req, res);
+    }
+
     res.writeHead(200, {
       "Content-Type": contentType,
       "Content-Length": stat.size
@@ -834,16 +878,12 @@ async function handleStatic(req, res, url) {
     const readStream = fs.createReadStream(filePath);
     readStream.pipe(res);
 
-    // 服务端 page_view：仅 HTML 文档 + 浏览器 UA（过滤健康检查/爬虫，避免噪声）
-    if (pathname === "/index.html") {
-      const ua = req.headers["user-agent"] || "";
-      if (/Mozilla|Chrome|Safari|Firefox|Edg/i.test(ua) &&
-          !/bot|crawl|spider|monitor|healthcheck|curl|wget|python-requests/i.test(ua)) {
-        sendGaEvent(gaClientId(req), "page_view", {
-          page_location: `https://${req.headers.host || "tinypdf.cn"}${url.pathname}`,
-          page_title: "TinyPDF",
-        });
-      }
+    // 服务端 page_view（客户端 gtag 在国内常被墙，这是主数据来源）
+    if (pageViewCid) {
+      sendGaEvent(pageViewCid, "page_view", {
+        page_location: `https://${req.headers.host || "tinypdf.cn"}${url.pathname}`,
+        page_title: "TinyPDF",
+      });
     }
   } catch {
     sendError(res, 404, "NOT_FOUND", "页面不存在");

@@ -7,6 +7,7 @@ const os = require("os");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
 const { URL } = require("url");
+const { COMPRESS, searchBestConfig } = require("./lib/compress-search");
 
 const PORT = Number(process.env.PORT || 3487);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -339,6 +340,8 @@ async function runGsQf(inputPath, outputPath, qf, resCap) {
       "-dAutoFilterGrayImages=false", "-dGrayImageFilter=/DCTEncode",
       "-dDownsampleColorImages=true", `-dColorImageResolution=${resCap}`,
       "-dDownsampleGrayImages=true", `-dGrayImageResolution=${resCap}`,
+      `-dColorImageDownsampleThreshold=${COMPRESS.DOWNSAMPLE_THRESHOLD}`,
+      `-dGrayImageDownsampleThreshold=${COMPRESS.DOWNSAMPLE_THRESHOLD}`,
       `-sOutputFile=${outputPath}`,
       "-c", ps, "-f", inputPath,
     ];
@@ -352,69 +355,25 @@ async function runGsQf(inputPath, outputPath, qf, resCap) {
   });
 }
 
-// 连续质量搜索：在 QFactor 维度做带括的预测式搜索，找出 <= 目标体积的最大结果
-// （即目标内最接近、最清晰的矢量保真结果）。
-//  - 若最高画质（QF_BEST）仍 <= 目标：直接返回它（无法更优，已是最清晰）。
-//  - 若最低画质（QF_WORST）仍 > 目标：返回 null（矢量重编码到不了，交由栅格化兜底）。
-//  - 否则在 (QF_BEST, QF_WORST) 间用幂律插值快速收敛。
-// 返回 { path, bytes } 或 null。中间临时文件即用即删，只保留当前最优。
-async function qfactorSearch(jobId, job, inputPath, outBase, targetBytes, minValidBytes) {
-  const QF_BEST = 0.02;   // 最高画质（体积最大）
-  const QF_WORST = 3.0;   // 最低画质（体积最小）
-  let best = null;        // { path, bytes, qf } —— <= 目标内体积最大者
-  let over = null;        // { qf, bytes } —— > 目标中 qf 最大者（用于括住目标）
-  let runIdx = 0, step = 0;
-
-  const announce = () => {
-    job.state.progress = Math.min(0.8, 0.12 + step * 0.1);
-    job.state.message  = "精准压缩中";
+// 分辨率优先的矢量压缩搜索：构造真实 Ghostscript probe，交由纯函数 searchBestConfig 选最优
+// (分辨率,质量) 配置。probe 即用即删探测临时文件，返回字节数或 null。
+// 返回 { qf, resCap, bytes }(≤target) 或 null（交由栅格化兜底）。不落地最终文件，由调用方按配置渲染。
+async function vectorCompressSearch(jobId, job, inputPath, scratchBase, targetBytes, minValidBytes) {
+  let step = 0;
+  const scratch = `${scratchBase}.probe.tmp`;
+  const probe = async (qf, resCap) => {
+    job.state.progress = Math.min(0.8, 0.12 + step * 0.05);
+    job.state.message  = "正在尝试符合要求的最高清版本…";
     sendEvent(jobId, job.state);
     step++;
-  };
-
-  // 跑一档 QFactor，分类入 best / over，即用即删非最优文件。返回字节数或 null。
-  const runQf = async (qf) => {
-    announce();
-    const out = `${outBase}.qf${runIdx++}.tmp`;
-    try { await runGsQf(inputPath, out, qf, 300); }
-    catch { try { fs.unlinkSync(out); } catch {} return null; }
-    let st; try { st = await fsp.stat(out); } catch { return null; }
-    if (st.size < minValidBytes) { try { fs.unlinkSync(out); } catch {} return null; }
-    if (st.size > targetBytes) {
-      if (!over || qf > over.qf) over = { qf, bytes: st.size };
-      try { fs.unlinkSync(out); } catch {}
-    } else if (!best || st.size > best.bytes) {
-      if (best && best.path !== out) { try { fs.unlinkSync(best.path); } catch {} }
-      best = { path: out, bytes: st.size, qf };
-    } else {
-      try { fs.unlinkSync(out); } catch {}
-    }
+    try { await runGsQf(inputPath, scratch, qf, resCap); }
+    catch { try { fs.unlinkSync(scratch); } catch {} return null; }
+    let st; try { st = await fsp.stat(scratch); } catch { return null; }
+    try { fs.unlinkSync(scratch); } catch {}
+    if (st.size < minValidBytes) return null;
     return st.size;
   };
-
-  // 边界探测
-  const sBest = await runQf(QF_BEST);
-  if (sBest !== null && sBest <= targetBytes) return best;   // 最高画质已达标 → 最优
-  const sWorst = await runQf(QF_WORST);
-  if (sWorst === null) return best;                          // 最低画质都失败
-  if (sWorst > targetBytes) return null;                     // 矢量重编码到不了 → 交栅格化
-
-  // 预测式带括搜索（幂律：size = k * qf^(-p)）
-  for (let it = 0; it < 5; it++) {
-    if (!over || !best) break;
-    if (best.bytes >= targetBytes * 0.96) break;             // 足够接近目标
-    if (best.qf - over.qf < 0.003) break;                    // 区间过小
-    const p = Math.log(over.bytes / best.bytes) / Math.log(best.qf / over.qf);
-    let q = (!isFinite(p) || p <= 0)
-      ? (over.qf + best.qf) / 2                               // 退化 → 二分
-      : over.qf * Math.pow(over.bytes / targetBytes, 1 / p); // 幂律预测命中目标
-    const loB = over.qf + (best.qf - over.qf) * 0.05;
-    const hiB = best.qf - (best.qf - over.qf) * 0.05;
-    q = Math.min(hiB, Math.max(loB, q));                     // 严格夹在括内
-    const s = await runQf(q);
-    if (s === null) break;
-  }
-  return best;
+  return await searchBestConfig(probe, targetBytes, COMPRESS);
 }
 
 function generateJobId() {
@@ -451,9 +410,8 @@ function cleanupJob(jobId) {
   if (job) {
     try { fs.unlinkSync(job.inputPath); } catch {}
     try { fs.unlinkSync(job.outputPath); } catch {}
-    // 删除所有可能泄漏的中间临时文件（QFactor 搜索遗留）
-    const base = job.outputPath;
-    for (let i = 0; i < 10; i++) { try { fs.unlinkSync(`${base}.qf${i}.tmp`); } catch {} }
+    // 删除可能泄漏的探测临时文件
+    try { fs.unlinkSync(`${job.outputPath}.probe.tmp`); } catch {}
   }
   jobs.delete(jobId);
   eventStreams.delete(jobId);
@@ -498,20 +456,22 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
       ratio       = 1;
     }
 
-    // ── 主压缩：QFactor 连续质量搜索（矢量保真，目标内体积最大 = 最清晰）──
-    // 在 QFactor 维度预测式搜索，命中 <= 目标的最大体积；文字/矢量保持清晰不栅格化。
+    // ── 主压缩：分辨率优先搜索（保住原生分辨率，质量为辅；目标内最清晰，矢量不栅格化）──
     if (resultBytes === null) {
       try {
-        const qres = await qfactorSearch(jobId, job, inputPath, outputPath, targetBytes, MIN_VALID_BYTES);
-        if (qres && qres.bytes >= MIN_VALID_BYTES) {
-          if (qres.path !== outputPath) await fsp.rename(qres.path, outputPath);
-          resultBytes    = qres.bytes;
-          ratio          = resultBytes / originalBytes;
-          bestValidPath  = outputPath;
-          bestValidBytes = resultBytes;
+        const cfg = await vectorCompressSearch(jobId, job, inputPath, outputPath, targetBytes, MIN_VALID_BYTES);
+        if (cfg) {
+          await runGsQf(inputPath, outputPath, cfg.qf, cfg.resCap); // 用选定配置渲染最终输出
+          const st = await fsp.stat(outputPath);
+          if (st.size <= targetBytes && st.size >= MIN_VALID_BYTES) {
+            resultBytes    = st.size;
+            ratio          = resultBytes / originalBytes;
+            bestValidPath  = outputPath;
+            bestValidBytes = resultBytes;
+          }
         }
       } catch {
-        // 搜索失败 → 交由栅格化兜底
+        // 搜索/渲染失败 → 交由栅格化兜底
       }
     }
 

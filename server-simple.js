@@ -5,9 +5,13 @@ const fsp = fs.promises;
 const path = require("path");
 const os = require("os");
 const crypto = require("crypto");
-const { spawn } = require("child_process");
+const { spawn, execFileSync } = require("child_process");
 const { URL } = require("url");
 const { COMPRESS, searchBestConfig } = require("./lib/compress-search");
+
+// 启动时探测 Ghostscript 版本，暴露到 /api/config，便于线上确认实际运行的 gs 版本（部署验证用）。
+let GS_VERSION = "unknown";
+try { GS_VERSION = execFileSync("gs", ["--version"], { timeout: 5000 }).toString().trim(); } catch {}
 
 const PORT = Number(process.env.PORT || 3487);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -590,7 +594,8 @@ async function handleApiRequest(req, res, url) {
     json(res, 200, {
       largeFileMB: LARGE_FILE_MB,
       adsEnabled:  AD_ENABLED_CFG,
-      maxUploadMB: MAX_UPLOAD_MB
+      maxUploadMB: MAX_UPLOAD_MB,
+      gsVersion:   GS_VERSION
     });
     return;
   }

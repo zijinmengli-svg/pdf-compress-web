@@ -57,6 +57,31 @@ async function test(name, fn) {
     assert.ok(r.bytes <= target, `量化下也不得超目标: ${r.bytes} <= ${target}`);
   });
 
+  // searchBestConfig：低清文件全分辨率达标 → 保住 600 cap。
+  await test("searchBestConfig 低清文件保住全分辨率", async () => {
+    const probe = makeOracle({ base: 6e6, nativeDpi: 130 });
+    const r = await searchBestConfig(probe, 20e6, COMPRESS);
+    assert.ok(r, "应返回配置");
+    assert.strictEqual(r.resCap, 600, "低清文件应保 600 cap");
+    assert.ok(r.bytes <= 20e6);
+  });
+
+  // searchBestConfig：高清文件全分辨率塞不下 → 沿阶梯下降取最高可行 cap。
+  await test("searchBestConfig 高清文件取最高可行分辨率", async () => {
+    const probe = makeOracle({ base: 6e6, nativeDpi: 600 });
+    const r = await searchBestConfig(probe, 8e6, COMPRESS);
+    assert.ok(r, "应返回配置");
+    assert.strictEqual(r.resCap, 100, "应取能塞进目标的最高 cap(=100)");
+    assert.ok(r.bytes <= 8e6, `不得超目标: ${r.bytes}`);
+  });
+
+  // searchBestConfig：物理不可达(目标过小) → null（交由调用方栅格化）。
+  await test("searchBestConfig 不可达返回 null", async () => {
+    const probe = makeOracle({ base: 6e6, nativeDpi: 600 });
+    const r = await searchBestConfig(probe, 5e5, COMPRESS);
+    assert.strictEqual(r, null, "目标过小、连兜底都超 → null");
+  });
+
   console.log(`\nSUMMARY: ${passed}/${passed + failed} passed`);
   process.exit(failed === 0 ? 0 : 1);
 })();

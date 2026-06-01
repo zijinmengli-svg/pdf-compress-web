@@ -333,7 +333,10 @@ async function runGsQf(inputPath, outputPath, qf, resCap) {
     const args = [
       "-sDEVICE=pdfwrite",
       "-dCompatibilityLevel=1.5",
-      "-dPDFSETTINGS=/prepress",
+      // 注意：不要用 -dPDFSETTINGS=/prepress。某些 Ghostscript 版本（如 Debian Bookworm 的 10.0.0）
+      // 会让该预设覆盖下面 setdistillerparams 设的自定义 QFactor，导致质量旋钮失效、体积坍缩到默认值。
+      // 显式设置所需各项参数，跨版本稳健（本地 10.03.1 实测：有无该预设结果完全一致）。
+      "-dEmbedAllFonts=true", "-dSubsetFonts=true",
       "-dNOPAUSE", "-dBATCH", "-dQUIET",
       "-dPassThroughJPEGImages=false",
       "-dAutoFilterColorImages=false", "-dColorImageFilter=/DCTEncode",

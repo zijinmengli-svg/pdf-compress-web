@@ -8,7 +8,8 @@
   "main": "server-simple.js",
   "scripts": {
     "start": "node server-simple.js",
-    "dev": "node server-simple.js"
+    "dev": "node server-simple.js",
+    "test": "node test/compress-search.test.js"
   },
   "keywords": ["pdf", "compression", "webapp"],
   "engines": {

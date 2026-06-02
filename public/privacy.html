@@ -38,7 +38,7 @@
 
       <section class="panel legal-card">
         <h1>隐私政策</h1>
-        <p class="update-date">最后更新：2025年6月1日</p>
+        <p class="update-date">最后更新：2026年6月2日</p>
 
         <p>TinyPDF（以下简称"我们"）非常重视您的隐私。本隐私政策说明我们如何收集、使用和保护您在使用本服务过程中涉及的信息。<strong>使用本服务即表示您同意本政策描述的数据处理方式。</strong></p>
 
@@ -54,45 +54,21 @@
         <h2>1.2 自动收集的信息</h2>
         <ul>
           <li><strong>服务器日志：</strong>包含请求时间、IP 地址、请求路径、HTTP 状态码等标准访问日志，用于排查故障和统计访问量，保留时间不超过 30 天；</li>
-          <li><strong>浏览器本地存储（localStorage）：</strong>我们在您的浏览器本地存储每日使用次数记录（包含日期、免费次数消耗量、广告次数），<strong>该数据完全存储在您的设备上，不会上传至服务器</strong>；</li>
-          <li><strong>广告服务数据：</strong>若您选择观看广告，第三方广告平台可能依据其隐私政策收集相关数据（详见下文第五条）。</li>
+          <li><strong>统计分析（Google Analytics）：</strong>我们使用 Google Analytics 4 统计访问量与功能使用情况，并通过第一方 Cookie <code>tinypdf_cid</code>（保留约 2 年）区分访客以避免重复计数。该统计数据为匿名汇总，不包含您的文件内容或个人身份信息；</li>
+          <li><strong>第三方广告数据：</strong>页面展示第三方广告（Google AdSense）。广告平台可能依据其隐私政策使用 Cookie 收集设备标识符、IP 地址或浏览行为，用于广告投放与统计（详见第五条）。</li>
         </ul>
 
         <h2>二、我们如何使用这些信息</h2>
         <table>
           <thead>
-            <tr>
-              <th>信息类型</th>
-              <th>使用目的</th>
-              <th>存储位置</th>
-              <th>保留时长</th>
-            </tr>
+            <tr><th>信息类型</th><th>使用目的</th><th>存储位置</th><th>保留时长</th></tr>
           </thead>
           <tbody>
-            <tr>
-              <td>上传的 PDF 文件</td>
-              <td>执行压缩任务</td>
-              <td>服务器临时目录</td>
-              <td>最长 1 小时，自动删除</td>
-            </tr>
-            <tr>
-              <td>压缩结果文件</td>
-              <td>供用户下载</td>
-              <td>服务器临时目录</td>
-              <td>最长 1 小时，自动删除</td>
-            </tr>
-            <tr>
-              <td>使用次数记录</td>
-              <td>执行每日配额限制</td>
-              <td>您的浏览器（localStorage）</td>
-              <td>每日零点自动重置</td>
-            </tr>
-            <tr>
-              <td>服务器访问日志</td>
-              <td>故障排查、访问统计</td>
-              <td>服务器日志</td>
-              <td>最长 30 天</td>
-            </tr>
+            <tr><td>上传的 PDF 文件</td><td>执行压缩任务</td><td>服务器临时目录</td><td>最长 1 小时，自动删除</td></tr>
+            <tr><td>压缩结果文件</td><td>供用户下载</td><td>服务器临时目录</td><td>最长 1 小时，自动删除</td></tr>
+            <tr><td>tinypdf_cid（第一方 Cookie）</td><td>访客去重统计</td><td>您的浏览器</td><td>约 2 年</td></tr>
+            <tr><td>服务器访问日志</td><td>故障排查、访问统计</td><td>服务器日志</td><td>最长 30 天</td></tr>
+            <tr><td>第三方广告 Cookie</td><td>广告投放与统计</td><td>由广告平台管理</td><td>依广告平台政策</td></tr>
           </tbody>
         </table>
 
@@ -102,20 +78,25 @@
           <li>不要求您注册账号或提供任何个人身份信息；</li>
           <li>不将您的文件或使用数据出售、出租或转让给任何第三方；</li>
           <li>不使用您的文件训练 AI 模型或用于本次压缩以外的任何目的；</li>
-          <li>不在您的设备上设置追踪 Cookie（第三方广告平台除外，详见第五条）。</li>
+          <li>除统计与第三方广告所需的 Cookie 外（见上文及第五条），不设置其他追踪 Cookie。</li>
         </ul>
 
         <h2>四、数据安全</h2>
         <ul>
           <li>所有文件传输通过 HTTPS 加密，防止传输过程中的数据泄露；</li>
           <li>服务器临时文件存储在隔离目录中，仅处理进程可访问；</li>
-          <li>系统通过定时任务自动清理超过 1 小时的临时文件；</li>
+          <li>系统自动清理超过 1 小时的临时文件；</li>
           <li>尽管我们采取了合理的安全措施，但互联网传输本身存在固有风险，我们无法对绝对安全作出保证。</li>
         </ul>
 
         <h2>五、第三方广告服务</h2>
-        <p>本服务通过展示第三方广告来维持免费运营。当您选择观看广告时，广告内容由第三方广告平台提供，该平台可能依据其自身隐私政策收集设备标识符、IP 地址或浏览行为等信息，用于广告投放和效果统计。</p>
-        <p>TinyPDF 不控制也不负责第三方广告平台的数据收集行为。如您希望了解详情，请参阅对应广告平台的隐私政策。</p>
+        <p>本服务通过展示第三方广告（Google AdSense）维持免费运营。Google 及其合作伙伴可能使用 Cookie 根据您对本站及其他网站的访问，向您投放广告。</p>
+        <ul>
+          <li>Google 使用广告 Cookie 可帮助其及其合作伙伴基于您的访问投放广告；</li>
+          <li>您可在 <a href="https://www.google.com/settings/ads" target="_blank" rel="noopener">Google 广告设置</a> 中管理或关闭个性化广告；</li>
+          <li>关于 Google 如何在投放广告时使用数据，详见 <a href="https://policies.google.com/technologies/ads" target="_blank" rel="noopener">Google 广告政策</a>；</li>
+          <li>TinyPDF 不控制也不负责第三方广告平台的数据收集行为。</li>
+        </ul>
 
         <h2>六、儿童隐私</h2>
         <p>本服务不面向 14 周岁以下的未成年人。我们不会故意收集未成年人的个人信息。如您发现未成年人在未经监护人同意的情况下使用本服务，请及时联系我们。</p>
@@ -123,7 +104,7 @@
         <h2>七、您的权利</h2>
         <p>由于本服务不收集个人账号信息，您的数据控制权主要体现在以下方面：</p>
         <ul>
-          <li><strong>删除使用记录：</strong>您可随时在浏览器设置中清除本站的 localStorage 数据，即可删除本地使用次数记录；</li>
+          <li><strong>管理统计与广告：</strong>您可随时在浏览器设置中清除本站 Cookie（含统计用的 tinypdf_cid），或通过 <a href="https://www.google.com/settings/ads" target="_blank" rel="noopener">Google 广告设置</a> 关闭个性化广告；</li>
           <li><strong>撤回上传：</strong>压缩任务完成后，您的原始文件将在 1 小时内自动从服务器删除，无需您手动操作；</li>
           <li><strong>联系我们：</strong>如您对数据处理有任何疑虑，可通过下方邮箱联系我们。</li>
         </ul>

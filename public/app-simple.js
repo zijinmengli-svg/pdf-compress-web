@@ -16,20 +16,11 @@ const metrics        = document.getElementById("metrics");
 const submitButton   = document.getElementById("submit-button");
 const downloadRow    = document.getElementById("download-row");
 const downloadButton = document.getElementById("download-button");
-const toastEl        = document.getElementById("toast");
-
-// 广告弹窗
-const adModal         = document.getElementById("ad-modal");
-const adModalClose    = document.getElementById("ad-modal-close");
-const adTomorrowBtn   = document.getElementById("ad-tomorrow-btn");
-const adClaimBtn      = document.getElementById("ad-claim-btn");
-const adProgressBar   = document.getElementById("ad-progress-bar");
-const adCountdownText = document.getElementById("ad-countdown-text");
-const adModalError    = document.getElementById("ad-modal-error");
 
 // ─── 运营配置（从服务端 /api/config 获取，初始化完成前使用默认值）─────────
-let LARGE_FILE_MB = 40;   // 大文件阈值（MB）：超过此值的文件，启用广告后需看广告解锁
-let ADS_ENABLED   = false; // 广告门是否启用（AD_ENABLED=true）；前期 false → 大文件照常免费
+let ADS_ENABLED   = false; // 是否注入展示广告（AD_ENABLED=true）
+let AD_CLIENT     = "";    // AdSense 发布商 ID
+let AD_SLOT       = "";    // AdSense 广告单元 ID
 let MAX_UPLOAD_MB = 100;  // 硬上限（MB）：超出直接拒绝
 
 // ─── 提交按钮状态 ─────────────────────────────────────────────────────────
@@ -38,69 +29,6 @@ function resetSubmitButton() {
   submitButton.disabled = false;
   submitButton.textContent = "开始压缩";
 }
-
-// ─── Toast 提示 ────────────────────────────────────────────────────────────
-let toastTimer = null;
-function showToast(msg) {
-  if (!toastEl) return;
-  toastEl.textContent = msg;
-  toastEl.hidden = false;
-  toastEl.classList.add("toast-visible");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    toastEl.classList.remove("toast-visible");
-    setTimeout(() => { toastEl.hidden = true; }, 300);
-  }, 3000);
-}
-
-// ─── 广告模态框（大文件解锁；当前为占位 UI，接入真实广告网络后再调整）──────
-let adTimer = null;
-const AD_WATCH_SECONDS = 5;
-
-function openAdModal() {
-  adClaimBtn.disabled = true;
-  adClaimBtn.textContent = "请观看广告...";
-  adProgressBar.style.width = "0%";
-  adCountdownText.textContent = `请观看广告，${AD_WATCH_SECONDS} 秒后可继续...`;
-  adModalError.textContent = "";
-  adModal.classList.add("is-open");
-
-  let elapsed = 0;
-  clearInterval(adTimer);
-  adTimer = setInterval(() => {
-    elapsed += 1;
-    const pct = Math.min(100, Math.round((elapsed / AD_WATCH_SECONDS) * 100));
-    adProgressBar.style.width = pct + "%";
-    const left = AD_WATCH_SECONDS - elapsed;
-    if (left > 0) {
-      adCountdownText.textContent = `请观看广告，${left} 秒后可继续...`;
-    } else {
-      clearInterval(adTimer);
-      adTimer = null;
-      adCountdownText.textContent = "广告观看完成，点击继续";
-      adClaimBtn.disabled = false;
-      adClaimBtn.textContent = "继续压缩";
-    }
-  }, 1000);
-}
-
-function closeAdModal() {
-  clearInterval(adTimer);
-  adTimer = null;
-  adModal.classList.remove("is-open");
-}
-
-adModalClose.addEventListener("click", closeAdModal);
-adTomorrowBtn.addEventListener("click", closeAdModal);
-adModal.addEventListener("click", (e) => {
-  if (e.target === adModal) closeAdModal();
-});
-
-adClaimBtn.addEventListener("click", () => {
-  if (adClaimBtn.disabled) return;
-  closeAdModal();
-  doCompress();
-});
 
 // ─── 质量警告气泡 ──────────────────────────────────────────────────────────
 // 当目标大小 < 原文件 15% 时提示用户，但不阻止压缩
@@ -327,14 +255,6 @@ form.addEventListener("submit", async (e) => {
   showError(targetError, targetValidation);
   if (fileValidation || targetValidation) return;
 
-  // 大文件门：仅当广告启用时拦截（前期未接广告 → 直接压缩，仅服务端记录大小）。
-  // 看完广告后由 adClaimBtn 回调 doCompress() 继续。
-  const isLarge = file.size > LARGE_FILE_MB * 1024 * 1024;
-  if (ADS_ENABLED && isLarge) {
-    openAdModal();
-    return;
-  }
-
   await doCompress();
 });
 
@@ -344,17 +264,21 @@ async function initConfig() {
     const res = await fetch("/api/config");
     if (res.ok) {
       const cfg = await res.json();
-      if (typeof cfg.largeFileMB === "number")  LARGE_FILE_MB = cfg.largeFileMB;
       if (typeof cfg.adsEnabled  === "boolean") ADS_ENABLED   = cfg.adsEnabled;
+      if (typeof cfg.adClient    === "string")  AD_CLIENT     = cfg.adClient;
+      if (typeof cfg.adSlot      === "string")  AD_SLOT       = cfg.adSlot;
       if (typeof cfg.maxUploadMB === "number")  MAX_UPLOAD_MB = cfg.maxUploadMB;
     }
   } catch {
-    // 网络失败时使用默认值（LARGE_FILE_MB=40, ADS_ENABLED=false, MAX_UPLOAD_MB=100）
+    // 网络失败时使用默认值（ADS_ENABLED=false → 不注入广告）
   }
-  // 顶部徽标：不限次数 + 单文件上限（接入广告后可改为"大文件需解锁"提示）
   const usageDisplay = document.getElementById("usage-display");
   if (usageDisplay) {
     usageDisplay.textContent = `免费不限次 · 单文件 ≤ ${MAX_UPLOAD_MB}MB`;
+  }
+  // 初始化展示广告位：未启用/未配置 → 不显示、不占空间；启用且有 ID → 注入 AdSense
+  if (window.initAdSlot) {
+    window.initAdSlot("ad-slot-main", { adsEnabled: ADS_ENABLED, adClient: AD_CLIENT, adSlot: AD_SLOT });
   }
 }
 

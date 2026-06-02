@@ -28,6 +28,8 @@ const MAX_UPLOAD_MB    = 100;   // 硬上限：超出直接 413 拒绝（服务�
 //                       多个大文件并发会 OOM；超出立即 429 优雅排队。
 const LARGE_FILE_MB        = Math.max(1, Number(process.env.LARGE_FILE_MB) || 40);
 const AD_ENABLED_CFG       = process.env.AD_ENABLED === "true";
+const AD_CLIENT_CFG        = process.env.AD_CLIENT || ""; // AdSense 发布商 ID (ca-pub-…)，过审后在 Railway 填
+const AD_SLOT_CFG          = process.env.AD_SLOT || "";   // AdSense 广告单元 ID
 const MAX_INFLIGHT_UPLOADS = Math.max(1, Number(process.env.MAX_INFLIGHT_UPLOADS) || 2);
 
 // ── 服务端 GA4 Measurement Protocol ─────────────────────────────────────────
@@ -393,9 +395,19 @@ function setSecurityHeaders(res) {
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  // 广告启用时放行 Google 广告域名（否则 AdSense JS 被自身 CSP 挡掉）；关闭时维持严格策略。
+  const adScript = AD_ENABLED_CFG
+    ? " https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.google.com https://*.googleadservices.com https://adservice.google.com"
+    : "";
+  const adFrame = AD_ENABLED_CFG
+    ? " https://*.googlesyndication.com https://*.google.com https://*.doubleclick.net"
+    : "";
+  const adImg = AD_ENABLED_CFG ? " https:" : "";
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'"
+    `default-src 'self'; script-src 'self'${adScript}; style-src 'self' 'unsafe-inline'; ` +
+    `img-src 'self' data:${adImg}; frame-src 'self'${adFrame}; connect-src 'self'${adScript}; ` +
+    `object-src 'none'; frame-ancestors 'none'`
   );
 }
 
@@ -594,6 +606,8 @@ async function handleApiRequest(req, res, url) {
     json(res, 200, {
       largeFileMB: LARGE_FILE_MB,
       adsEnabled:  AD_ENABLED_CFG,
+      adClient:    AD_CLIENT_CFG,
+      adSlot:      AD_SLOT_CFG,
       maxUploadMB: MAX_UPLOAD_MB,
       gsVersion:   GS_VERSION
     });

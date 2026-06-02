@@ -32,6 +32,12 @@ async function startServer(port, env) {
   const home1 = await get(3711, "/");
   const csp1 = home1.headers["content-security-policy"] || "";
   check("disabled: CSP strict (no googlesyndication)", !csp1.includes("googlesyndication"), csp1.slice(0, 80));
+  // 无后缀法务路由（AdSense 审核员需可达隐私政策）
+  const t1 = await get(3711, "/terms");
+  check("extensionless /terms → 200", t1.status === 200, "status=" + t1.status);
+  check("/terms serves new terms content", t1.body.includes("用户协议") && t1.body.includes("完全免费、不限次数"));
+  const p1 = await get(3711, "/privacy");
+  check("extensionless /privacy → 200", p1.status === 200, "status=" + p1.status);
   s1.kill("SIGKILL");
 
   // ── 广告启用 + 假 ID ──

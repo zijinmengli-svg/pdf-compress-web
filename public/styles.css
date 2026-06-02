@@ -898,3 +898,13 @@ th {
   cursor: not-allowed;
   pointer-events: none;
 }
+
+/* ── 展示广告位：与主卡片同宽、隐藏时不占空间（hidden 属性即 display:none）────── */
+.ad-slot {
+  width: 100%;
+  margin: 0 0 20px;
+  text-align: center;
+  min-height: 0;
+}
+.ad-slot[hidden] { display: none; }
+.ad-slot .adsbygoogle { display: block; }

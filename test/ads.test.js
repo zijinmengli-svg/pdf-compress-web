@@ -2,6 +2,7 @@
 const assert = require("assert");
 const http = require("http");
 const { spawn } = require("child_process");
+const adSlot = require("../public/ad-slot.js");
 
 const SRV_DIR = "/Users/libin/Desktop/我的工作流集合/PDF压缩工具-最终版";
 let passed = 0, failed = 0;
@@ -43,6 +44,13 @@ async function startServer(port, env) {
   const csp2 = home2.headers["content-security-policy"] || "";
   check("enabled: CSP allows googlesyndication script", csp2.includes("pagead2.googlesyndication.com"), csp2.slice(0, 120));
   s2.kill("SIGKILL");
+
+  // shouldInject 纯逻辑
+  check("shouldInject: all set → true", adSlot.shouldInject({ adsEnabled: true, adClient: "ca-pub-x", adSlot: "1" }) === true);
+  check("shouldInject: disabled → false", adSlot.shouldInject({ adsEnabled: false, adClient: "ca-pub-x", adSlot: "1" }) === false);
+  check("shouldInject: no client → false", adSlot.shouldInject({ adsEnabled: true, adClient: "", adSlot: "1" }) === false);
+  check("shouldInject: no slot → false", adSlot.shouldInject({ adsEnabled: true, adClient: "ca-pub-x", adSlot: "" }) === false);
+  check("shouldInject: null → false", adSlot.shouldInject(null) === false);
 
   console.log(`\nSUMMARY: ${passed}/${passed + failed} passed`);
   process.exit(failed === 0 ? 0 : 1);

@@ -825,9 +825,14 @@ const MIME_TYPES = {
 function isRealBrowser(req) {
   const ua = req.headers["user-agent"] || "";
   if (!/Mozilla|Chrome|Safari|Firefox|Edg/i.test(ua)) return false;
-  if (/bot|crawl|spider|slurp|monitor|healthcheck|uptime|pingdom|curl|wget|python-requests|headless|lighthouse/i.test(ua)) return false;
-  const sfm = req.headers["sec-fetch-mode"];
-  if (sfm && sfm !== "navigate") return false; // 资源/预取/嵌入请求，非真实页面浏览
+  if (/bot|crawl|spider|slurp|monitor|healthcheck|uptime|pingdom|curl|wget|python-requests|headless|lighthouse|node-fetch|axios|okhttp|go-http|java\/|libwww|scrapy|ahrefs|semrush|mj12|facebookexternalhit|yandex|baidu|sogou/i.test(ua)) return false;
+  // 必须是真实浏览器的顶层页面导航：现代浏览器导航都带 Sec-Fetch-Mode=navigate；
+  // 爬虫/扫描器/健康检查/Cloudflare 探测/预取多半不带这些头——借此过滤掉它们造成的活跃用户虚高。
+  if (req.headers["sec-fetch-mode"] !== "navigate") return false;
+  const dest = req.headers["sec-fetch-dest"];
+  if (dest && dest !== "document") return false;
+  const purpose = req.headers["sec-purpose"] || req.headers["purpose"] || "";
+  if (/prefetch|prerender/i.test(purpose)) return false;
   return true;
 }
 

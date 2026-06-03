@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node server-simple.js",
     "dev": "node server-simple.js",
-    "test": "node test/compress-search.test.js && node test/ads.test.js"
+    "test": "node test/compress-search.test.js && node test/ads.test.js && node test/pageview-filter.test.js"
   },
   "keywords": ["pdf", "compression", "webapp"],
   "engines": {

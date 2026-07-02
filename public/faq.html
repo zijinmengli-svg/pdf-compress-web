@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="TinyPDF常见问题 - 解答您关于PDF压缩的所有疑问。" />
-    <meta name="keywords" content="PDF压缩常见问题,PDF压缩帮助,PDF压缩教程" />
-    <title>常见问题 - TinyPDF</title>
+    <meta name="description" content="TinyPDF FAQ - answers about compressing PDFs to a target file size online." />
+    <meta name="keywords" content="PDF compression FAQ,PDF compressor help,compress PDF tutorial,target PDF size" />
+    <title>FAQ - TinyPDF</title>
     <link rel="stylesheet" href="/styles.css" />
       <!-- Google Analytics -->
     <script async src="https://analytics.tinypdf.cn/gtag/js?id=G-EGP898J99G"></script>
@@ -18,15 +18,46 @@
   </head>
   <body>
     <main class="content-shell">
+      <header class="topbar">
+        <a href="/" class="eyebrow">TinyPDF</a>
+      </header>
+
       <section class="panel legal-card">
-        <h1>常见问题</h1>
-        <p><strong>为什么没有达到我输入的目标大小？</strong></p>
-        <p>当 PDF 本身压缩空间有限时，系统会返回尽量接近目标大小的较优结果。</p>
-        <p><strong>为什么下载链接失效了？</strong></p>
-        <p>本站只做临时文件处理，文件会在后台配置的时间后自动删除，请及时下载。</p>
-        <p><strong>支付后没有立即生效怎么办？</strong></p>
-        <p>请联系客服并附上支付截图，我们会协助处理。</p>
+        <h1>FAQ</h1>
+
+        <p><strong>What does TinyPDF do?</strong></p>
+        <p>TinyPDF compresses one PDF to a target size in MB. It is useful when a form, email system, portfolio site, or upload portal has a strict file-size limit.</p>
+
+        <p><strong>Why did the result not reach my exact target size?</strong></p>
+        <p>Some PDFs have limited room for compression. When an exact target is not safely reachable, TinyPDF returns the smallest usable result it can produce without intentionally damaging the file.</p>
+
+        <p><strong>Will my page count or page size change?</strong></p>
+        <p>The tool is designed to keep the same page count, page dimensions, and layout whenever possible.</p>
+
+        <p><strong>Why might quality drop on very small targets?</strong></p>
+        <p>If the target is much smaller than the original file, images may need stronger compression. In difficult cases, the tool may convert pages to images to reach a smaller size, which can reduce sharpness.</p>
+
+        <p><strong>How long are files kept?</strong></p>
+        <p>Uploaded and compressed files are temporary. They are automatically deleted after about one hour, so download your result soon after compression finishes.</p>
+
+        <p><strong>Do I need an account?</strong></p>
+        <p>No. TinyPDF does not require registration for the compression workflow.</p>
       </section>
     </main>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div>
+          <strong>Support:</strong>
+          <a href="mailto:zijinnmengli@gmail.com">zijinnmengli@gmail.com</a>
+        </div>
+        <nav class="footer-links">
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+          <a href="/contact">Contact</a>
+          <a href="/faq">FAQ</a>
+        </nav>
+      </div>
+    </footer>
   </body>
 </html>

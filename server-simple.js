@@ -271,7 +271,7 @@ async function forceRasterToTarget(jobId, job, inputPath, targetBytes) {
   let step = 0;
   const announce = () => {
     job.state.progress = Math.min(0.97, 0.85 + step * 0.02);
-    job.state.message  = "强力压缩中";
+    job.state.message  = "Applying stronger compression";
     sendEvent(jobId, job.state);
     step++;
   };
@@ -287,7 +287,7 @@ async function forceRasterToTarget(jobId, job, inputPath, targetBytes) {
   announce();
   let dpi = PROBE_DPI, q = PROBE_Q;
   let pdf = await tryPass(dpi, q);
-  if (!pdf) throw new Error("栅格化失败");
+  if (!pdf) throw new Error("Rasterization failed");
   pts.push({ dpi, bytes: pdf.length });
   if (pdf.length <= targetBytes) return pdf;
 
@@ -372,7 +372,7 @@ async function vectorCompressSearch(jobId, job, inputPath, scratchBase, targetBy
   const scratch = `${scratchBase}.probe.tmp`;
   const probe = async (qf, resCap) => {
     job.state.progress = Math.min(0.8, 0.12 + step * 0.05);
-    job.state.message  = "正在尝试符合要求的最高清版本…";
+    job.state.message  = "Searching for the clearest version that fits the target size...";
     sendEvent(jobId, job.state);
     step++;
     try { await runGsQf(inputPath, scratch, qf, resCap); }
@@ -451,8 +451,8 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     ]);
     const originalBytes = inputStat.size;
 
-    if (!pdfInfo.valid)     throw new Error("无效的 PDF 文件，无法压缩");
-    if (pdfInfo.encrypted)  throw new Error("该 PDF 已加密，请先解除加密后再压缩");
+    if (!pdfInfo.valid)     throw new Error("This is not a valid PDF file");
+    if (pdfInfo.encrypted)  throw new Error("Encrypted PDFs are not supported. Please unlock the file and try again.");
 
     // 最小有效输出：>= 原文件 1% 且 >= 10KB
     const MIN_VALID_BYTES = Math.max(Math.round(originalBytes * 0.01), 10 * 1024);
@@ -460,7 +460,7 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     job.state.originalBytes = originalBytes;
     job.state.targetBytes   = targetBytes;
     job.state.progress      = 0.1;
-    job.state.message       = "开始压缩";
+    job.state.message       = "Starting compression";
     sendEvent(jobId, job.state);
 
     let resultBytes    = null;
@@ -530,17 +530,17 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
       ratio       = 1;
     }
 
-    if (resultBytes === null) throw new Error("压缩失败，请重试");
+    if (resultBytes === null) throw new Error("Compression failed. Please try again.");
 
     const reachedTarget    = resultBytes <= targetBytes;
     const noCompressNeeded = resultBytes >= originalBytes; // 已回退原文件：目标 ≥ 原文件
     job.state.progress     = 1;
     job.state.status       = "done";
     job.state.message      = noCompressNeeded
-      ? "原文件已不大于目标大小，无需压缩"
+      ? "The original file is already no larger than the target size"
       : reachedTarget
-        ? "压缩完成"
-        : "已尽力压缩——文件内容空间有限，当前结果为可在不损坏内容前提下的最小体积";
+        ? "Compression complete"
+        : "The file has limited room for compression. This is the smallest usable result we could produce.";
     job.state.resultBytes  = resultBytes;
     job.state.ratio        = ratio;
     job.state.downloadName = downloadName;
@@ -559,7 +559,7 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
   } catch (error) {
     job.state.status   = "error";
     job.state.progress = 1;
-    job.state.message  = "压缩失败";
+    job.state.message  = "Compression failed";
     job.state.error    = error.message;
     sendEvent(jobId, job.state);
     sendGaEvent(job.gaClientId, "compress_error", { reason: String(error.message).slice(0, 100) });
@@ -623,14 +623,14 @@ async function handleApiRequest(req, res, url) {
     const contentType = req.headers["content-type"] || "";
     const boundaryMatch = contentType.match(/boundary=(.+)$/);
     if (!boundaryMatch) {
-      sendError(res, 400, "BAD_REQUEST", "无效的请求");
+      sendError(res, 400, "BAD_REQUEST", "Invalid request");
       return;
     }
 
     // 在途上传内存保护：上传阶段会把整个文件读入内存，且发生在并发任务校验之前；
     // 多个大文件同时上传会顶爆内存（OOM）。这里单独限制同时解析中的上传数，超出立即 429。
     if (inflightUploads >= MAX_INFLIGHT_UPLOADS) {
-      sendError(res, 429, "TOO_BUSY", "服务器繁忙，请稍后重试");
+      sendError(res, 429, "TOO_BUSY", "The server is busy. Please try again later.");
       return;
     }
     inflightUploads++;
@@ -640,9 +640,9 @@ async function handleApiRequest(req, res, url) {
         parts = await handleMultipart(req, boundaryMatch[1], MAX_UPLOAD_MB * 1024 * 1024);
       } catch (e) {
         if (e.message === "file too large") {
-          sendError(res, 413, "FILE_TOO_LARGE", `文件过大，最大支持 ${MAX_UPLOAD_MB}MB`);
+          sendError(res, 413, "FILE_TOO_LARGE", `File is too large. The maximum supported size is ${MAX_UPLOAD_MB}MB`);
         } else {
-          sendError(res, 400, "BAD_REQUEST", "上传解析失败，请重试");
+          sendError(res, 400, "BAD_REQUEST", "Upload parsing failed. Please try again.");
         }
         return;
       }
@@ -650,26 +650,26 @@ async function handleApiRequest(req, res, url) {
       const targetMBPart = parts.find(p => p.name === "targetMB");
 
       if (!pdfPart || !pdfPart.filename || !targetMBPart) {
-        sendError(res, 400, "BAD_REQUEST", "请选择PDF文件并输入目标大小");
+        sendError(res, 400, "BAD_REQUEST", "Please choose a PDF file and enter a target size");
         return;
       }
 
       const targetMB = parseFloat(targetMBPart.content.toString("utf8"));
       if (!Number.isFinite(targetMB) || targetMB <= 0) {
-        sendError(res, 400, "BAD_REQUEST", "请输入有效的目标大小");
+        sendError(res, 400, "BAD_REQUEST", "Please enter a valid target size");
         return;
       }
 
       // PDF 魔数校验：拒绝非 PDF 内容（防止任意文件上传）
       if (!pdfPart.content.slice(0, 5).equals(Buffer.from("%PDF-"))) {
-        sendError(res, 400, "INVALID_FILE", "请上传有效的 PDF 文件");
+        sendError(res, 400, "INVALID_FILE", "Please upload a valid PDF file");
         return;
       }
 
       // 并发任务数限制（防内存/磁盘 DoS）
       const activeJobs = [...jobs.values()].filter(j => j.state.status === "processing").length;
       if (activeJobs >= MAX_CONCURRENT_JOBS) {
-        sendError(res, 429, "TOO_BUSY", "服务器繁忙，请稍后重试");
+        sendError(res, 429, "TOO_BUSY", "The server is busy. Please try again later.");
         return;
       }
 
@@ -703,7 +703,7 @@ async function handleApiRequest(req, res, url) {
           id: jobId,
           status: "processing",
           progress: 0.05,
-          message: "文件已上传",
+          message: "File uploaded",
           originalBytes: uploadBytes,
           targetBytes: parseSizeToBytes(targetMB),
           resultBytes: null,
@@ -735,7 +735,7 @@ async function handleApiRequest(req, res, url) {
   if (url.pathname.startsWith("/api/jobs/") && url.pathname.endsWith("/events")) {
     const jobId = url.pathname.slice("/api/jobs/".length, -"/events".length);
     if (!jobs.has(jobId)) {
-      sendError(res, 404, "NOT_FOUND", "任务不存在");
+      sendError(res, 404, "NOT_FOUND", "Job not found");
       return;
     }
 
@@ -765,7 +765,7 @@ async function handleApiRequest(req, res, url) {
     const jobId = url.pathname.slice("/api/jobs/".length, -"/download".length);
     const job = jobs.get(jobId);
     if (!job || job.state.status !== "done") {
-      sendError(res, 404, "NOT_FOUND", "文件不存在");
+      sendError(res, 404, "NOT_FOUND", "File not found");
       return;
     }
 
@@ -773,7 +773,7 @@ async function handleApiRequest(req, res, url) {
     try {
       stat = await fsp.stat(job.outputPath);
     } catch {
-      sendError(res, 404, "NOT_FOUND", "文件已过期，请重新压缩");
+      sendError(res, 404, "NOT_FOUND", "The file has expired. Please compress it again.");
       return;
     }
     const safeName = job.state.downloadName || "compressed.pdf";
@@ -789,7 +789,7 @@ async function handleApiRequest(req, res, url) {
     return;
   }
 
-  sendError(res, 404, "NOT_FOUND", "接口不存在");
+  sendError(res, 404, "NOT_FOUND", "API endpoint not found");
 }
 
 function json(res, statusCode, payload, extraHeaders = {}) {
@@ -875,7 +875,7 @@ async function handleStatic(req, res, url) {
       });
     }
   } catch {
-    sendError(res, 404, "NOT_FOUND", "页面不存在");
+    sendError(res, 404, "NOT_FOUND", "Page not found");
   }
 }
 
@@ -890,7 +890,7 @@ const server = http.createServer(async (req, res) => {
     }
   } catch (error) {
     console.error(error);
-    sendError(res, 500, "INTERNAL_ERROR", "服务器错误");
+    sendError(res, 500, "INTERNAL_ERROR", "Server error");
   }
 });
 

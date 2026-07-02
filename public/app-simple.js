@@ -1,4 +1,4 @@
-// ─── DOM 引用 ───────────────────────────────────────────────────────────────
+// DOM references
 const form           = document.getElementById("compress-form");
 const fileInput      = document.getElementById("pdf");
 const dropzone       = document.getElementById("dropzone");
@@ -17,21 +17,21 @@ const submitButton   = document.getElementById("submit-button");
 const downloadRow    = document.getElementById("download-row");
 const downloadButton = document.getElementById("download-button");
 
-// ─── 运营配置（从服务端 /api/config 获取，初始化完成前使用默认值）─────────
-let ADS_ENABLED   = false; // 是否注入展示广告（AD_ENABLED=true）
-let AD_CLIENT     = "";    // AdSense 发布商 ID
-let AD_SLOT       = "";    // AdSense 广告单元 ID
-let MAX_UPLOAD_MB = 100;  // 硬上限（MB）：超出直接拒绝
+// Runtime configuration from /api/config, with defaults before initialization.
+let ADS_ENABLED   = false; // Whether display ads are enabled.
+let AD_CLIENT     = "";    // AdSense publisher ID.
+let AD_SLOT       = "";    // AdSense slot ID.
+let MAX_UPLOAD_MB = 100;   // Hard upload limit in MB.
 
-// ─── 提交按钮状态 ─────────────────────────────────────────────────────────
+// Submit button state
 function resetSubmitButton() {
   submitButton.classList.remove("btn-compressing", "btn-disabled");
   submitButton.disabled = false;
-  submitButton.textContent = "开始压缩";
+  submitButton.textContent = "Compress PDF";
 }
 
-// ─── 质量警告气泡 ──────────────────────────────────────────────────────────
-// 当目标大小 < 原文件 15% 时提示用户，但不阻止压缩
+// Quality warning bubble
+// Warn when target size is below 15% of the original file, but do not block compression.
 const QUALITY_WARN_RATIO = 0.15;
 
 function checkQualityWarning() {
@@ -46,7 +46,7 @@ function checkQualityWarning() {
   }
 }
 
-// ─── 工具函数 ────────────────────────────────────────────────────────────────
+// Utilities
 let activeEvents       = null;
 let activeJobId        = null;
 let activeDownloadName = "compressed.pdf";
@@ -68,10 +68,10 @@ function showError(target, message) {
 
 function setMetrics(state) {
   const rows = [
-    ["原文件大小",    formatMB(state.originalBytes)],
-    ["目标压缩大小",  formatMB(state.targetBytes)],
-    ["实际压缩后大小", state.resultBytes ? formatMB(state.resultBytes) : "--"],
-    ["压缩比例",      (state.ratio != null && Number.isFinite(state.ratio)) ? ratioText(state.ratio) : "--"]
+    ["Original size", formatMB(state.originalBytes)],
+    ["Target size", formatMB(state.targetBytes)],
+    ["Compressed size", state.resultBytes ? formatMB(state.resultBytes) : "--"],
+    ["Compression ratio", (state.ratio != null && Number.isFinite(state.ratio)) ? ratioText(state.ratio) : "--"]
   ];
   metrics.innerHTML = rows
     .map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`)
@@ -81,14 +81,14 @@ function setMetrics(state) {
 function setStatus(state) {
   statusCard.hidden = false;
   statusTitle.textContent =
-    state.status === "done"  ? "压缩完成" :
-    state.status === "error" ? "压缩失败" : "处理中";
+    state.status === "done"  ? "Compression complete" :
+    state.status === "error" ? "Compression failed" : "Processing";
   const percent = Math.round((state.progress || 0) * 100);
   statusPercent.textContent = `${percent}%`;
   progressFill.style.width  = `${percent}%`;
   let msg = state.error || state.message || "";
   if (state.status === "done" && state.rasterized) {
-    msg += (msg ? " " : "") + "友情提示：为压缩到目标大小，页面已转为图片，清晰度可能有所下降。";
+    msg += (msg ? " " : "") + "Note: to reach the target size, pages were converted to images, so sharpness may be lower.";
   }
   statusMessage.textContent  = msg;
   setMetrics(state);
@@ -96,27 +96,27 @@ function setStatus(state) {
 }
 
 function validateFile(file) {
-  if (!file) return "上传失败，请选择有效的 PDF 文件";
-  if (!file.name.toLowerCase().endsWith(".pdf")) return "仅支持 PDF 文件，请重新上传";
-  if (file.size <= 0) return "上传失败，请选择有效的 PDF 文件";
-  if (file.size > MAX_UPLOAD_MB * 1024 * 1024) return `文件过大，当前最大支持 ${MAX_UPLOAD_MB}MB`;
+  if (!file) return "Please choose a valid PDF file";
+  if (!file.name.toLowerCase().endsWith(".pdf")) return "Only PDF files are supported";
+  if (file.size <= 0) return "Please choose a valid PDF file";
+  if (file.size > MAX_UPLOAD_MB * 1024 * 1024) return `File is too large. The current limit is ${MAX_UPLOAD_MB}MB`;
   return "";
 }
 
 function validateTarget(file) {
   const raw = targetInput.value.trim();
-  if (!raw) return "请输入目标文件大小";
-  if (!/^\d+(\.\d+)?$/.test(raw)) return "请输入有效数字";
+  if (!raw) return "Enter a target file size";
+  if (!/^\d+(\.\d+)?$/.test(raw)) return "Enter a valid number";
   const numeric = Number(raw);
-  if (!Number.isFinite(numeric)) return "请输入有效数字";
-  if (numeric <= 0) return "目标大小必须大于 0";
-  if (file && numeric >= file.size / 1024 / 1024) return "目标大小需小于原文件大小";
+  if (!Number.isFinite(numeric)) return "Enter a valid number";
+  if (numeric <= 0) return "Target size must be greater than 0";
+  if (file && numeric >= file.size / 1024 / 1024) return "Target size must be smaller than the original file";
   return "";
 }
 
 function updateFileState(file) {
   if (!file) {
-    fileMeta.textContent = "拖拽文件到此处，或点击选择文件";
+    fileMeta.textContent = "Drag a file here, or click to choose one";
     showError(fileError, "");
     return;
   }
@@ -137,13 +137,13 @@ async function startDownload() {
 async function submitCompression(body) {
   const response = await fetch("/api/jobs", { method: "POST", body });
   const payload  = await response.json();
-  if (!response.ok) throw new Error(payload.message || "服务器繁忙，请稍后重试");
+  if (!response.ok) throw new Error(payload.message || "The server is busy. Please try again later.");
 
   activeJobId = payload.id;
   setStatus({
     status: payload.status,
     progress: 0.06,
-    message: "正在校验文件",
+    message: "Checking the file",
     originalBytes: payload.originalBytes,
     targetBytes: payload.targetBytes,
     resultBytes: null,
@@ -179,12 +179,12 @@ async function doCompress() {
 
   submitButton.disabled = true;
   submitButton.classList.add("btn-compressing");
-  submitButton.textContent = "压缩中...";
+  submitButton.textContent = "Compressing...";
   downloadRow.hidden = true;
   setStatus({
     status: "processing",
     progress: 0.02,
-    message: "正在上传文件，请稍候",
+    message: "Uploading the file",
     originalBytes: file.size,
     targetBytes: parseFloat(targetInput.value) * 1024 * 1024,
     resultBytes: null,
@@ -201,8 +201,8 @@ async function doCompress() {
     setStatus({
       status: "error",
       progress: 1,
-      message: error.message || "服务器繁忙，请稍后重试",
-      error: error.message || "服务器繁忙，请稍后重试",
+      message: error.message || "The server is busy. Please try again later.",
+      error: error.message || "The server is busy. Please try again later.",
       originalBytes: file.size,
       targetBytes: parseFloat(targetInput.value) * 1024 * 1024,
       resultBytes: null,
@@ -212,7 +212,7 @@ async function doCompress() {
   }
 }
 
-// ─── 事件监听 ────────────────────────────────────────────────────────────────
+// Event listeners
 fileInput.addEventListener("change", () => {
   updateFileState(fileInput.files?.[0]);
   checkQualityWarning();
@@ -230,7 +230,7 @@ dropzone.addEventListener("drop", (e) => {
   dropzone.classList.remove("is-dragover");
   const files = e.dataTransfer?.files;
   if (!files || files.length !== 1) {
-    showError(fileError, "仅支持单个 PDF 文件，请重新上传");
+    showError(fileError, "Please upload one PDF file at a time");
     return;
   }
   fileInput.files = files;
@@ -258,7 +258,7 @@ form.addEventListener("submit", async (e) => {
   await doCompress();
 });
 
-// ─── 初始化：从服务端拉取配置 ─────────────────────────────────────────────
+// Initialization: load runtime configuration from the server.
 async function initConfig() {
   try {
     const res = await fetch("/api/config");
@@ -270,13 +270,13 @@ async function initConfig() {
       if (typeof cfg.maxUploadMB === "number")  MAX_UPLOAD_MB = cfg.maxUploadMB;
     }
   } catch {
-    // 网络失败时使用默认值（ADS_ENABLED=false → 不注入广告）
+    // Keep defaults when the network request fails.
   }
   const usageDisplay = document.getElementById("usage-display");
   if (usageDisplay) {
-    usageDisplay.textContent = `免费不限次 · 单文件 ≤ ${MAX_UPLOAD_MB}MB`;
+    usageDisplay.textContent = `Free unlimited use · One file up to ${MAX_UPLOAD_MB}MB`;
   }
-  // 初始化展示广告位：未启用/未配置 → 不显示、不占空间；启用且有 ID → 注入 AdSense
+  // Initialize the display ad slot only when ads are enabled and configured.
   if (window.initAdSlot) {
     window.initAdSlot("ad-slot-main", { adsEnabled: ADS_ENABLED, adClient: AD_CLIENT, adSlot: AD_SLOT });
   }

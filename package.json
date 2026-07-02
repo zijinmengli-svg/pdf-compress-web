@@ -2,7 +2,7 @@
   "name": "tinypdf",
   "version": "1.0.0",
   "private": true,
-  "description": "TinyPDF - 精准压缩 PDF 到指定大小",
+  "description": "TinyPDF - compress PDF files to a target size",
   "author": "TinyPDF Team",
   "license": "UNLICENSED",
   "main": "server-simple.js",

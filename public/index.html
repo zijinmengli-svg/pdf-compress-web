@@ -1,23 +1,23 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="TinyPDF - 精准压缩PDF到指定大小，免费在线使用，无需安装。" />
-    <meta name="keywords" content="PDF压缩,压缩PDF,PDF减小大小,PDF在线压缩,免费PDF压缩" />
+    <meta name="description" content="TinyPDF compresses a PDF to your chosen target size online. Free to use, no install required." />
+    <meta name="keywords" content="compress PDF,PDF compressor,reduce PDF size,compress PDF to target size,online PDF compression,free PDF compressor" />
     <meta name="author" content="TinyPDF" />
     <meta name="robots" content="index, follow" />
-    <meta property="og:title" content="TinyPDF - 精准压缩 PDF" />
-    <meta property="og:description" content="精准压缩PDF到指定大小，免费在线使用，无需安装。" />
+    <meta property="og:title" content="TinyPDF - Compress PDF to a Target Size" />
+    <meta property="og:description" content="Upload one PDF, choose the target size in MB, and download a smaller file." />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://example.com/" />
-    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:url" content="https://tinypdf.cn/" />
+    <meta property="og:locale" content="en_US" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="TinyPDF - 精准压缩 PDF" />
-    <meta name="twitter:description" content="精准压缩PDF到指定大小，免费在线使用，无需安装。" />
-    <title>TinyPDF - 精准压缩 PDF | 免费在线工具</title>
+    <meta name="twitter:title" content="TinyPDF - Compress PDF to a Target Size" />
+    <meta name="twitter:description" content="Free online PDF compression with a target file size." />
+    <title>TinyPDF - Compress PDF to a Target Size | Free Online Tool</title>
     <link rel="stylesheet" href="/styles.css" />
-    <link rel="canonical" href="https://example.com/" />
+    <link rel="canonical" href="https://tinypdf.cn/" />
     <!-- Google Analytics -->
     <script async src="https://analytics.tinypdf.cn/gtag/js?id=G-EGP898J99G"></script>
     <script>
@@ -32,14 +32,14 @@
       <header class="topbar">
         <span class="eyebrow">TinyPDF</span>
         <div class="usage-bar">
-          <span class="usage-badge" id="usage-display" aria-live="polite">免费不限次 · 单文件 ≤ 100MB</span>
+          <span class="usage-badge" id="usage-display" aria-live="polite">Free unlimited use · One file up to 100MB</span>
         </div>
       </header>
 
       <section class="hero">
         <h1>TinyPDF</h1>
         <h2 class="hero-sub">Precision PDF Compression.</h2>
-        <p class="lead">仅支持电脑网页版、单个 PDF 文件压缩。保持页数、页面尺寸和版式不变，优先保留图片和文字清晰度。</p>
+        <p class="lead">Desktop web only. Compress one PDF at a time while keeping the same page count, page size, and layout whenever possible.</p>
       </section>
 
       <section class="panel">
@@ -48,62 +48,60 @@
         <form id="compress-form" class="form" novalidate>
           <label class="dropzone" id="dropzone" for="pdf">
             <input id="pdf" name="pdf" type="file" accept="application/pdf" required />
-            <span class="drop-title">上传 PDF 文件</span>
-            <span class="drop-meta" id="file-meta">拖拽文件到此处，或点击选择文件</span>
+            <span class="drop-title">Upload a PDF</span>
+            <span class="drop-meta" id="file-meta">Drag a file here, or click to choose one</span>
           </label>
 
           <p class="field-error" id="file-error" hidden></p>
 
           <label class="field">
-            <span>目标大小</span>
+            <span>Target size</span>
             <div class="inline-field">
-              <input id="targetMB" name="targetMB" type="number" min="0.1" step="0.1" placeholder="例如 20" required />
+              <input id="targetMB" name="targetMB" type="number" min="0.1" step="0.1" placeholder="e.g. 20" required />
               <span class="suffix">MB</span>
             </div>
             <div class="quality-warning" id="quality-warning" hidden>
-              ⚠️ 当前压缩值过小，会导致文件损失过大
+              This target is very small, so the file may lose visible quality.
             </div>
           </label>
 
           <p class="field-error" id="target-error" hidden></p>
 
           <div class="action-row">
-            <button id="submit-button" type="submit">开始压缩</button>
+            <button id="submit-button" type="submit">Compress PDF</button>
           </div>
         </form>
 
         <section class="status-card" id="status-card" hidden>
           <div class="status-header">
-            <span id="status-title">准备中</span>
+            <span id="status-title">Preparing</span>
             <span id="status-percent">0%</span>
           </div>
           <div class="progress-track">
             <div class="progress-fill" id="progress-fill"></div>
           </div>
-          <p id="status-message">等待任务启动</p>
+          <p id="status-message">Waiting for the job to start</p>
           <dl class="metrics" id="metrics"></dl>
           <div class="action-row" id="download-row" hidden>
-            <button id="download-button" type="button">下载压缩文件</button>
+            <button id="download-button" type="button">Download compressed PDF</button>
           </div>
         </section>
-
       </section>
 
-      <!-- 展示广告位：默认隐藏不占空间，仅真广告填充时显示；与主卡片同宽、永远在卡片栈最底 -->
       <div id="ad-slot-main" class="ad-slot" hidden></div>
     </main>
 
     <footer class="site-footer">
       <div class="footer-inner">
         <div>
-          <strong>客服邮箱：</strong>
+          <strong>Support:</strong>
           <a href="mailto:zijinnmengli@gmail.com">zijinnmengli@gmail.com</a>
         </div>
         <nav class="footer-links">
-          <a href="/privacy">隐私政策</a>
-          <a href="/terms">用户协议</a>
-          <a href="/contact">联系我们</a>
-          <a href="/faq">常见问题</a>
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+          <a href="/contact">Contact</a>
+          <a href="/faq">FAQ</a>
         </nav>
       </div>
     </footer>

@@ -23,7 +23,7 @@ async function startServer(port, env) {
 }
 
 (async () => {
-  // ── 广告关闭（默认）──
+  // Ads disabled by default.
   const s1 = await startServer(3711, { AD_ENABLED: "", AD_CLIENT: "", AD_SLOT: "" });
   const cfg1 = JSON.parse((await get(3711, "/api/config")).body);
   check("disabled: adsEnabled=false", cfg1.adsEnabled === false, JSON.stringify(cfg1));
@@ -32,15 +32,15 @@ async function startServer(port, env) {
   const home1 = await get(3711, "/");
   const csp1 = home1.headers["content-security-policy"] || "";
   check("disabled: CSP strict (no googlesyndication)", !csp1.includes("googlesyndication"), csp1.slice(0, 80));
-  // 无后缀法务路由（AdSense 审核员需可达隐私政策）
+  // Extensionless legal routes stay reachable for AdSense review.
   const t1 = await get(3711, "/terms");
   check("extensionless /terms → 200", t1.status === 200, "status=" + t1.status);
-  check("/terms serves new terms content", t1.body.includes("用户协议") && t1.body.includes("完全免费、不限次数"));
+  check("/terms serves English terms content", t1.body.includes("Terms of Service") && t1.body.includes("free to use"));
   const p1 = await get(3711, "/privacy");
   check("extensionless /privacy → 200", p1.status === 200, "status=" + p1.status);
   s1.kill("SIGKILL");
 
-  // ── 广告启用 + 假 ID ──
+  // Ads enabled with test IDs.
   const s2 = await startServer(3712, { AD_ENABLED: "true", AD_CLIENT: "ca-pub-test", AD_SLOT: "123456" });
   const cfg2 = JSON.parse((await get(3712, "/api/config")).body);
   check("enabled: adsEnabled=true", cfg2.adsEnabled === true);
@@ -51,7 +51,7 @@ async function startServer(port, env) {
   check("enabled: CSP allows googlesyndication script", csp2.includes("pagead2.googlesyndication.com"), csp2.slice(0, 120));
   s2.kill("SIGKILL");
 
-  // shouldInject 纯逻辑
+  // shouldInject pure logic.
   check("shouldInject: all set → true", adSlot.shouldInject({ adsEnabled: true, adClient: "ca-pub-x", adSlot: "1" }) === true);
   check("shouldInject: disabled → false", adSlot.shouldInject({ adsEnabled: false, adClient: "ca-pub-x", adSlot: "1" }) === false);
   check("shouldInject: no client → false", adSlot.shouldInject({ adsEnabled: true, adClient: "", adSlot: "1" }) === false);

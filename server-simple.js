@@ -9,6 +9,7 @@ const { spawn, execFileSync } = require("child_process");
 const { URL } = require("url");
 const { COMPRESS, searchBestConfig } = require("./lib/compress-search");
 const { makeCompressedDownloadName } = require("./lib/download-name");
+const { chooseAnalyticsFile } = require("./lib/analytics-path");
 const {
   appendAnalyticsEvent,
   readAnalyticsEvents,
@@ -24,7 +25,7 @@ const PORT = Number(process.env.PORT || 3487);
 const HOST = process.env.HOST || "0.0.0.0";
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
-const ANALYTICS_FILE = process.env.ANALYTICS_FILE || path.join(ROOT, "data", "analytics-events.jsonl");
+const ANALYTICS_FILE = chooseAnalyticsFile(process.env, ROOT);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.randomBytes(32).toString("hex");
 const ADMIN_COOKIE = "tinypdf_admin";
@@ -148,8 +149,8 @@ function requestMeta(req, url, extra = {}) {
     /Safari\//i.test(ua) ? "Safari" : "Other";
   const device = /Mobi|Android|iPhone|iPad/i.test(ua) ? "mobile" : "desktop";
   return {
-    sessionId: extra.sessionId || "",
-    clientId: extra.clientId || analyticsClientId(req),
+    sessionId: extra.sessionId || req.headers["x-tinypdf-session-id"] || "",
+    clientId: extra.clientId || req.headers["x-tinypdf-client-id"] || analyticsClientId(req),
     path: url ? url.pathname : "",
     referrer: extra.referrer != null ? extra.referrer : (req.headers.referer || req.headers.referrer || ""),
     utm: extra.utm || {},
@@ -863,6 +864,26 @@ async function handleApiRequest(req, res, url) {
         target_mb: targetMB,
         ads_enabled: AD_ENABLED_CFG ? 1 : 0
       });
+      appendAnalyticsEvent(ANALYTICS_FILE, {
+        event: "file_selected",
+        ...analyticsMeta,
+        data: {
+          fileName: pdfPart.filename,
+          fileCategory: classifyFileName(pdfPart.filename),
+          fileBytes: uploadBytes,
+        },
+      }).catch(() => {});
+      appendAnalyticsEvent(ANALYTICS_FILE, {
+        event: "compress_started",
+        ...analyticsMeta,
+        data: {
+          fileName: pdfPart.filename,
+          fileCategory: classifyFileName(pdfPart.filename),
+          fileBytes: uploadBytes,
+          targetMB,
+          targetBytes: parseSizeToBytes(targetMB),
+        },
+      }).catch(() => {});
 
       const job = {
         id: jobId,
@@ -1054,10 +1075,6 @@ async function handleStatic(req, res, url) {
         page_location: `https://${req.headers.host || "tinypdf.cn"}${url.pathname}`,
         page_title: "TinyPDF",
       });
-      recordAnalytics(req, url, "page_view", {
-        pageLocation: `https://${req.headers.host || "tinypdf.cn"}${url.pathname}`,
-        pageTitle: "TinyPDF",
-      }, { clientId: pageViewCid });
     }
   } catch {
     sendError(res, 404, "NOT_FOUND", "Page not found");

@@ -203,7 +203,14 @@ async function startDownload() {
 }
 
 async function submitCompression(body) {
-  const response = await fetch("/api/jobs", { method: "POST", body });
+  const response = await fetch("/api/jobs", {
+    method: "POST",
+    headers: {
+      "X-TinyPDF-Session-Id": getSessionId(),
+      "X-TinyPDF-Client-Id": getClientId(),
+    },
+    body
+  });
   const payload  = await response.json();
   if (!response.ok) throw new Error(payload.message || "The server is busy. Please try again later.");
 
@@ -335,6 +342,11 @@ window.addEventListener("pagehide", () => {
   trackEvent("session_end", {
     dwellSeconds: Math.max(0, Math.round((Date.now() - pageStartedAt) / 1000)),
   }, { beacon: true });
+});
+
+trackEvent("page_view", {
+  pageLocation: window.location.href,
+  pageTitle: document.title,
 });
 
 // Initialization: load runtime configuration from the server.

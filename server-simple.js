@@ -849,7 +849,7 @@ async function handleApiRequest(req, res, url) {
       const outputPath = path.join(os.tmpdir(), `pdf-compress-${jobId}-output.pdf`);
       const uploadBytes = pdfPart.content.length;
       const clientId = gaClientId(req);
-      const analyticsMeta = requestMeta(req, url, { clientId });
+      const analyticsMeta = requestMeta(req, url);
 
       await fsp.writeFile(inputPath, pdfPart.content);
 

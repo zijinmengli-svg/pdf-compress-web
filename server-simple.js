@@ -8,6 +8,7 @@ const crypto = require("crypto");
 const { spawn, execFileSync } = require("child_process");
 const { URL } = require("url");
 const { COMPRESS, searchBestConfig } = require("./lib/compress-search");
+const { makeCompressedDownloadName } = require("./lib/download-name");
 const {
   appendAnalyticsEvent,
   readAnalyticsEvents,
@@ -223,11 +224,6 @@ function parseSizeToBytes(valueMB) {
 function sanitizeFileName(name) {
   const base = path.basename(name || "compressed.pdf");
   return base.replace(/[^\w.\-\u4e00-\u9fa5]/g, "_");
-}
-
-function fileNameWithSuffix(name, suffix) {
-  const parsed = path.parse(name);
-  return `${parsed.name}${suffix}${parsed.ext || ".pdf"}`;
 }
 
 function escapeHtml(value) {
@@ -537,7 +533,7 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
   if (!job) return;
 
   const outputPath = job.outputPath;
-  const downloadName = fileNameWithSuffix(sanitizeFileName(originalName), ".compressed");
+  const downloadName = makeCompressedDownloadName(originalName);
 
   try {
     // ── 校验 PDF ──────────────────────────────────────────────────────────

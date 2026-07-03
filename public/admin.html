@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>TinyPDF Analytics</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell admin-shell">
+      <header class="dashboard-header">
+        <div>
+          <span class="eyebrow">TinyPDF</span>
+          <h1 class="admin-title">TinyPDF Analytics</h1>
+        </div>
+        <button class="secondary-button admin-logout" id="logout-button" type="button" hidden>Log out</button>
+      </header>
+
+      <section class="panel admin-login" id="login-panel">
+        <h2>Admin login</h2>
+        <form class="form compact-form" id="login-form">
+          <label class="field">
+            <span>Password</span>
+            <div class="inline-field">
+              <input id="admin-password" type="password" autocomplete="current-password" required />
+            </div>
+          </label>
+          <p class="field-error" id="login-error" hidden></p>
+          <button type="submit">Open dashboard</button>
+        </form>
+      </section>
+
+      <section id="dashboard" hidden>
+        <div class="admin-section-head">
+          <h2>Overview</h2>
+          <button class="secondary-button" id="refresh-button" type="button">Refresh</button>
+        </div>
+        <div class="stat-grid" id="overview-grid"></div>
+
+        <div class="dashboard-grid">
+          <section class="table-card">
+            <h3>Acquisition</h3>
+            <div id="sources-list" class="mini-list"></div>
+          </section>
+          <section class="table-card">
+            <h3>Funnel</h3>
+            <div id="funnel-list" class="mini-list"></div>
+          </section>
+          <section class="table-card">
+            <h3>Files</h3>
+            <div id="file-categories" class="mini-list"></div>
+          </section>
+          <section class="table-card">
+            <h3>Compression</h3>
+            <div id="compression-list" class="mini-list"></div>
+          </section>
+        </div>
+
+        <section class="table-card">
+          <h3>Recent uploaded file names</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Time</th><th>File name</th><th>Category</th><th>Size</th></tr></thead>
+              <tbody id="recent-files"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="table-card">
+          <h3>Recent events</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Time</th><th>Event</th><th>Source</th><th>Device</th><th>Details</th></tr></thead>
+              <tbody id="recent-events"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/admin.js?v=1.0.0" defer></script>
+  </body>
+</html>

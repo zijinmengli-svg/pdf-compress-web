@@ -8,6 +8,12 @@ const crypto = require("crypto");
 const { spawn, execFileSync } = require("child_process");
 const { URL } = require("url");
 const { COMPRESS, searchBestConfig } = require("./lib/compress-search");
+const {
+  appendAnalyticsEvent,
+  readAnalyticsEvents,
+  summarizeAnalytics,
+  classifyFileName,
+} = require("./lib/analytics");
 
 // 启动时探测 Ghostscript 版本，暴露到 /api/config，便于线上确认实际运行的 gs 版本（部署验证用）。
 let GS_VERSION = "unknown";
@@ -17,6 +23,11 @@ const PORT = Number(process.env.PORT || 3487);
 const HOST = process.env.HOST || "0.0.0.0";
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
+const ANALYTICS_FILE = process.env.ANALYTICS_FILE || path.join(ROOT, "data", "analytics-events.jsonl");
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
+const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.randomBytes(32).toString("hex");
+const ADMIN_COOKIE = "tinypdf_admin";
+const ADMIN_SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 const MAX_UPLOAD_MB    = 100;   // 硬上限：超出直接 413 拒绝（服务端强制，不可绕过）
 // ── 运营配置（通过 Railway 环境变量控制，无需改代码）────────────────────────
@@ -110,6 +121,91 @@ function sendGaEvent(clientId, name, params) {
     reqOut.write(body);
     reqOut.end();
   } catch {}
+}
+
+function parseCookies(req) {
+  const out = {};
+  const raw = (req && req.headers && req.headers.cookie) || "";
+  for (const part of raw.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx === -1) continue;
+    out[part.slice(0, idx).trim()] = decodeURIComponent(part.slice(idx + 1).trim());
+  }
+  return out;
+}
+
+function analyticsClientId(req) {
+  return readClientId(req) || gaClientId(req);
+}
+
+function requestMeta(req, url, extra = {}) {
+  const ua = req.headers["user-agent"] || "";
+  const browser =
+    /Edg\//i.test(ua) ? "Edge" :
+    /Chrome\//i.test(ua) ? "Chrome" :
+    /Firefox\//i.test(ua) ? "Firefox" :
+    /Safari\//i.test(ua) ? "Safari" : "Other";
+  const device = /Mobi|Android|iPhone|iPad/i.test(ua) ? "mobile" : "desktop";
+  return {
+    sessionId: extra.sessionId || "",
+    clientId: extra.clientId || analyticsClientId(req),
+    path: url ? url.pathname : "",
+    referrer: extra.referrer != null ? extra.referrer : (req.headers.referer || req.headers.referrer || ""),
+    utm: extra.utm || {},
+    userAgent: ua,
+    country: req.headers["cf-ipcountry"] || "",
+    device,
+    browser,
+  };
+}
+
+function recordAnalytics(req, url, event, data = {}, extra = {}) {
+  const payload = {
+    event,
+    ...requestMeta(req, url, extra),
+    data,
+  };
+  appendAnalyticsEvent(ANALYTICS_FILE, payload).catch(() => {});
+}
+
+function signAdminSession(ts) {
+  return crypto.createHmac("sha256", ADMIN_SESSION_SECRET).update(String(ts)).digest("hex");
+}
+
+function makeAdminCookie(req) {
+  const ts = Date.now();
+  const value = `${ts}.${signAdminSession(ts)}`;
+  const host = req.headers.host || "";
+  const secure = /tinypdf\.cn/i.test(host) || req.headers["x-forwarded-proto"] === "https";
+  return `${ADMIN_COOKIE}=${encodeURIComponent(value)}; Path=/; Max-Age=${Math.floor(ADMIN_SESSION_MAX_AGE_MS / 1000)}; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+}
+
+function clearAdminCookie() {
+  return `${ADMIN_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`;
+}
+
+function hasValidAdminSession(req) {
+  const value = parseCookies(req)[ADMIN_COOKIE];
+  if (!value || !value.includes(".")) return false;
+  const [tsRaw, sig] = value.split(".");
+  const ts = Number(tsRaw);
+  if (!Number.isFinite(ts) || Date.now() - ts > ADMIN_SESSION_MAX_AGE_MS) return false;
+  const expected = signAdminSession(tsRaw);
+  const a = Buffer.from(sig || "");
+  const b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+async function readJsonBody(req, maxBytes = 64 * 1024) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > maxBytes) throw new Error("JSON body too large");
+    chunks.push(chunk);
+  }
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  return raw ? JSON.parse(raw) : {};
 }
 
 const jobs = new Map();
@@ -555,6 +651,20 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
       reached_target: reachedTarget ? 1 : 0,
       rasterized:     job.state.rasterized ? 1 : 0,
     });
+    appendAnalyticsEvent(ANALYTICS_FILE, {
+      event: "compress_success",
+      ...(job.analyticsMeta || {}),
+      data: {
+        fileName: job.originalName,
+        fileCategory: classifyFileName(job.originalName),
+        originalBytes,
+        targetBytes,
+        resultBytes,
+        ratio: Number((ratio || 0).toFixed(3)),
+        reachedTarget,
+        rasterized: Boolean(job.state.rasterized),
+      },
+    }).catch(() => {});
 
   } catch (error) {
     job.state.status   = "error";
@@ -563,6 +673,15 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     job.state.error    = error.message;
     sendEvent(jobId, job.state);
     sendGaEvent(job.gaClientId, "compress_error", { reason: String(error.message).slice(0, 100) });
+    appendAnalyticsEvent(ANALYTICS_FILE, {
+      event: "compress_error",
+      ...(job.analyticsMeta || {}),
+      data: {
+        fileName: job.originalName,
+        fileCategory: classifyFileName(job.originalName),
+        reason: String(error.message).slice(0, 160),
+      },
+    }).catch(() => {});
   }
 }
 
@@ -615,7 +734,62 @@ async function handleApiRequest(req, res, url) {
   }
 
   if (url.pathname === "/api/track" && req.method === "POST") {
-    json(res, 200, { ok: true });
+    try {
+      const body = await readJsonBody(req);
+      const eventName = String(body.event || "").trim();
+      if (!eventName || eventName.length > 80) {
+        sendError(res, 400, "BAD_REQUEST", "Invalid event");
+        return;
+      }
+      await appendAnalyticsEvent(ANALYTICS_FILE, {
+        event: eventName,
+        ...requestMeta(req, url, {
+          sessionId: body.sessionId || "",
+          clientId: body.clientId || analyticsClientId(req),
+          referrer: body.referrer,
+          utm: body.utm || {},
+        }),
+        data: body.data || {},
+      });
+      json(res, 200, { ok: true });
+    } catch {
+      sendError(res, 400, "BAD_REQUEST", "Invalid tracking payload");
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/admin/login" && req.method === "POST") {
+    if (!ADMIN_PASSWORD) {
+      sendError(res, 503, "ADMIN_DISABLED", "Admin login is not configured");
+      return;
+    }
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      sendError(res, 400, "BAD_REQUEST", "Invalid login payload");
+      return;
+    }
+    if (String(body.password || "") !== ADMIN_PASSWORD) {
+      sendError(res, 401, "UNAUTHORIZED", "Invalid password");
+      return;
+    }
+    json(res, 200, { ok: true }, { "Set-Cookie": makeAdminCookie(req) });
+    return;
+  }
+
+  if (url.pathname === "/api/admin/logout" && req.method === "POST") {
+    json(res, 200, { ok: true }, { "Set-Cookie": clearAdminCookie() });
+    return;
+  }
+
+  if (url.pathname === "/api/admin/summary" && req.method === "GET") {
+    if (!ADMIN_PASSWORD || !hasValidAdminSession(req)) {
+      sendError(res, 401, "UNAUTHORIZED", "Admin login required");
+      return;
+    }
+    const events = await readAnalyticsEvents(ANALYTICS_FILE);
+    json(res, 200, summarizeAnalytics(events));
     return;
   }
 
@@ -678,6 +852,7 @@ async function handleApiRequest(req, res, url) {
       const outputPath = path.join(os.tmpdir(), `pdf-compress-${jobId}-output.pdf`);
       const uploadBytes = pdfPart.content.length;
       const clientId = gaClientId(req);
+      const analyticsMeta = requestMeta(req, url, { clientId });
 
       await fsp.writeFile(inputPath, pdfPart.content);
 
@@ -698,6 +873,7 @@ async function handleApiRequest(req, res, url) {
         inputPath,
         outputPath,
         originalName: pdfPart.filename,
+        analyticsMeta,
         targetBytes: parseSizeToBytes(targetMB),
         state: {
           id: jobId,
@@ -778,6 +954,15 @@ async function handleApiRequest(req, res, url) {
     }
     const safeName = job.state.downloadName || "compressed.pdf";
     const encodedName = encodeURIComponent(safeName);
+    appendAnalyticsEvent(ANALYTICS_FILE, {
+      event: "download_clicked",
+      ...(job.analyticsMeta || {}),
+      data: {
+        fileName: job.originalName,
+        fileCategory: classifyFileName(job.originalName),
+        resultBytes: job.state.resultBytes || stat.size,
+      },
+    }).catch(() => {});
     res.writeHead(200, {
       "Content-Type": "application/pdf",
       "Content-Length": stat.size,
@@ -873,6 +1058,10 @@ async function handleStatic(req, res, url) {
         page_location: `https://${req.headers.host || "tinypdf.cn"}${url.pathname}`,
         page_title: "TinyPDF",
       });
+      recordAnalytics(req, url, "page_view", {
+        pageLocation: `https://${req.headers.host || "tinypdf.cn"}${url.pathname}`,
+        pageTitle: "TinyPDF",
+      }, { clientId: pageViewCid });
     }
   } catch {
     sendError(res, 404, "NOT_FOUND", "Page not found");

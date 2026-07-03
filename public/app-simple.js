@@ -50,6 +50,66 @@ function checkQualityWarning() {
 let activeEvents       = null;
 let activeJobId        = null;
 let activeDownloadName = "compressed.pdf";
+let lastTrackedFileSignature = "";
+const pageStartedAt = Date.now();
+
+function getClientId() {
+  const key = "tinypdf_client_id";
+  try {
+    let value = localStorage.getItem(key);
+    if (!value) {
+      value = `${Math.floor(Math.random() * 1e9)}.${Math.floor(Date.now() / 1000)}`;
+      localStorage.setItem(key, value);
+    }
+    return value;
+  } catch {
+    return `${Math.floor(Math.random() * 1e9)}.${Math.floor(Date.now() / 1000)}`;
+  }
+}
+
+function getSessionId() {
+  const key = "tinypdf_session_id";
+  try {
+    let value = sessionStorage.getItem(key);
+    if (!value) {
+      value = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+      sessionStorage.setItem(key, value);
+    }
+    return value;
+  } catch {
+    return `${Date.now()}-${Math.random()}`;
+  }
+}
+
+function currentUtm() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    source: params.get("utm_source") || "",
+    medium: params.get("utm_medium") || "",
+    campaign: params.get("utm_campaign") || "",
+  };
+}
+
+function trackEvent(event, data = {}, options = {}) {
+  const payload = JSON.stringify({
+    event,
+    sessionId: getSessionId(),
+    clientId: getClientId(),
+    referrer: document.referrer || "",
+    utm: currentUtm(),
+    data,
+  });
+  if (options.beacon && navigator.sendBeacon) {
+    navigator.sendBeacon("/api/track", new Blob([payload], { type: "application/json" }));
+    return;
+  }
+  fetch("/api/track", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: payload,
+    keepalive: Boolean(options.keepalive),
+  }).catch(() => {});
+}
 
 function formatMB(bytes) {
   if (!Number.isFinite(bytes)) return "--";
@@ -122,6 +182,14 @@ function updateFileState(file) {
   }
   fileMeta.textContent = `${file.name} · ${formatMB(file.size)}`;
   showError(fileError, validateFile(file));
+  const signature = `${file.name}:${file.size}:${file.lastModified || 0}`;
+  if (signature !== lastTrackedFileSignature) {
+    lastTrackedFileSignature = signature;
+    trackEvent("file_selected", {
+      fileName: file.name,
+      fileBytes: file.size,
+    });
+  }
 }
 
 async function startDownload() {
@@ -194,6 +262,11 @@ async function doCompress() {
   const body = new FormData();
   body.append("pdf", file);
   body.append("targetMB", targetInput.value.trim());
+  trackEvent("compress_started", {
+    fileName: file.name,
+    fileBytes: file.size,
+    targetMB: Number(targetInput.value.trim()),
+  });
 
   try {
     await submitCompression(body);
@@ -256,6 +329,12 @@ form.addEventListener("submit", async (e) => {
   if (fileValidation || targetValidation) return;
 
   await doCompress();
+});
+
+window.addEventListener("pagehide", () => {
+  trackEvent("session_end", {
+    dwellSeconds: Math.max(0, Math.round((Date.now() - pageStartedAt) / 1000)),
+  }, { beacon: true });
 });
 
 // Initialization: load runtime configuration from the server.

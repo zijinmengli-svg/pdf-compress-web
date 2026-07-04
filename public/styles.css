@@ -354,7 +354,8 @@ h3 {
 }
 
 button,
-.button-link {
+.button-link,
+a.secondary-button {
   display: inline-flex;
   justify-content: center;
   align-items: center;
@@ -379,6 +380,12 @@ button:disabled {
 
 .secondary-button {
   background: linear-gradient(135deg, #7a879a, #526073);
+}
+
+.download-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .field-error {

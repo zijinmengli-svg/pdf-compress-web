@@ -22,7 +22,7 @@ function text(value) {
 }
 
 function formatNumber(value) {
-  return new Intl.NumberFormat("en").format(Number(value || 0));
+  return new Intl.NumberFormat("zh-CN").format(Number(value || 0));
 }
 
 function formatPercent(value) {
@@ -44,24 +44,66 @@ function formatTime(value) {
 
 function sourceFor(event) {
   if (event.utm && event.utm.source) return event.utm.source;
-  if (!event.referrer) return "Direct";
+  if (!event.referrer) return "直接访问";
   try {
     return new URL(event.referrer).hostname.replace(/^www\./, "");
   } catch {
-    return "Other";
+    return "其他";
   }
+}
+
+function eventLabel(value) {
+  const labels = {
+    page_view: "页面访问",
+    file_selected: "选择文件",
+    compress_started: "开始压缩",
+    compress_success: "压缩成功",
+    compress_error: "压缩失败",
+    download_clicked: "点击下载",
+    session_end: "会话结束",
+  };
+  return labels[value] || value || "-";
+}
+
+function categoryLabel(value) {
+  const labels = {
+    presentation: "演示文稿",
+    design: "设计作品",
+    resume: "简历",
+    document: "文档",
+    academic: "学术资料",
+    scan: "扫描件",
+    other: "其他",
+  };
+  return labels[value] || value || "其他";
+}
+
+function deviceLabel(value) {
+  const labels = { desktop: "桌面端", mobile: "移动端" };
+  return labels[value] || value || "-";
+}
+
+function funnelLabel(value) {
+  const labels = {
+    page_view: "页面访问",
+    file_selected: "已选择文件",
+    compress_started: "开始压缩",
+    compress_success: "压缩成功",
+    download_clicked: "点击下载",
+  };
+  return labels[value] || value.replace(/_/g, " ");
 }
 
 function renderStats(summary) {
   const items = [
-    ["Today views", summary.overview.todayPageViews],
-    ["7-day views", summary.overview.pageViews7d],
-    ["30-day views", summary.overview.pageViews30d],
-    ["7-day visitors", summary.overview.uniqueVisitors7d],
-    ["Today compressions", summary.overview.todayCompressions],
-    ["Today downloads", summary.overview.todayDownloads],
-    ["Success rate", formatPercent(summary.overview.successRate7d)],
-    ["Avg. dwell", `${summary.behavior.averageDwellSeconds || 0}s`],
+    ["今日浏览量", summary.overview.todayPageViews],
+    ["7 天浏览量", summary.overview.pageViews7d],
+    ["30 天浏览量", summary.overview.pageViews30d],
+    ["7 天访客", summary.overview.uniqueVisitors7d],
+    ["今日压缩", summary.overview.todayCompressions],
+    ["今日下载", summary.overview.todayDownloads],
+    ["成功率", formatPercent(summary.overview.successRate7d)],
+    ["平均停留", `${summary.behavior.averageDwellSeconds || 0} 秒`],
   ];
   document.getElementById("overview-grid").innerHTML = items.map(([label, value]) => `
     <div class="stat-card">
@@ -74,7 +116,7 @@ function renderStats(summary) {
 function renderList(id, rows, labelKey, valueKey = "count") {
   const el = document.getElementById(id);
   if (!rows || rows.length === 0) {
-    el.innerHTML = `<div class="empty-state">No data yet</div>`;
+    el.innerHTML = `<div class="empty-state">暂无数据</div>`;
     return;
   }
   const max = Math.max(...rows.map(row => Number(row[valueKey] || 0)), 1);
@@ -92,7 +134,7 @@ function renderList(id, rows, labelKey, valueKey = "count") {
 
 function renderFunnel(summary) {
   const rows = Object.entries(summary.funnel).map(([step, count]) => ({
-    step: step.replace(/_/g, " "),
+    step: funnelLabel(step),
     count,
   }));
   renderList("funnel-list", rows, "step");
@@ -100,13 +142,28 @@ function renderFunnel(summary) {
 
 function renderCompression(summary) {
   const rows = [
-    { label: "Reached target", value: `${summary.compression.reachedTargetRate}%` },
-    { label: "Rasterized", value: `${summary.compression.rasterizedRate}%` },
-    { label: "Errors", value: formatNumber((summary.compression.errorReasons || []).reduce((sum, item) => sum + item.count, 0)) },
+    { label: "达到目标", value: `${summary.compression.reachedTargetRate}%` },
+    { label: "栅格化", value: `${summary.compression.rasterizedRate}%` },
+    { label: "错误", value: formatNumber((summary.compression.errorReasons || []).reduce((sum, item) => sum + item.count, 0)) },
   ];
   document.getElementById("compression-list").innerHTML = rows.map(row => `
     <div class="metric-line"><span>${text(row.label)}</span><strong>${text(row.value)}</strong></div>
   `).join("");
+}
+
+function renderPromotions(summary) {
+  const rows = summary.acquisition.promotions || [];
+  document.getElementById("promotion-rows").innerHTML = rows.length ? rows.slice(0, 20).map(row => `
+    <tr>
+      <td>${text(row.source || "-")}</td>
+      <td>${text(row.content || "-")}</td>
+      <td>${text(row.campaign || "-")}</td>
+      <td>${text(formatNumber(row.visits))}</td>
+      <td>${text(formatNumber(row.visitors))}</td>
+      <td>${text(formatNumber(row.compressions))}</td>
+      <td>${text(formatNumber(row.downloads))}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="7">暂无推广来源数据。后续推广链接请带 utm_source、utm_campaign、utm_content。</td></tr>`;
 }
 
 function renderRecentFiles(summary) {
@@ -115,10 +172,10 @@ function renderRecentFiles(summary) {
     <tr>
       <td>${text(formatTime(row.ts))}</td>
       <td>${text(row.fileName)}</td>
-      <td>${text(row.category)}</td>
+      <td>${text(categoryLabel(row.category))}</td>
       <td>${text(formatBytes(row.fileBytes))}</td>
     </tr>
-  `).join("") : `<tr><td colspan="4">No uploaded file names yet</td></tr>`;
+  `).join("") : `<tr><td colspan="4">暂无上传文件名</td></tr>`;
 }
 
 function renderRecentEvents(summary) {
@@ -126,21 +183,21 @@ function renderRecentEvents(summary) {
   document.getElementById("recent-events").innerHTML = rows.length ? rows.map(event => {
     const data = event.data || {};
     const details = [
-      data.fileName ? `file: ${data.fileName}` : "",
-      data.fileCategory ? `category: ${data.fileCategory}` : "",
-      data.reason ? `reason: ${data.reason}` : "",
+      data.fileName ? `文件：${data.fileName}` : "",
+      data.fileCategory ? `分类：${categoryLabel(data.fileCategory)}` : "",
+      data.reason ? `原因：${data.reason}` : "",
     ].filter(Boolean).join(" | ");
     return `
       <tr>
         <td>${text(formatTime(event.ts))}</td>
-        <td>${text(event.event)}</td>
+        <td>${text(eventLabel(event.event))}</td>
         <td>${text(sourceFor(event))}</td>
         <td>${text(event.country || "Unknown")}</td>
-        <td>${text(event.device || "-")}</td>
+        <td>${text(deviceLabel(event.device))}</td>
         <td>${text(details || "-")}</td>
       </tr>
     `;
-  }).join("") : `<tr><td colspan="6">No events yet</td></tr>`;
+  }).join("") : `<tr><td colspan="6">暂无事件</td></tr>`;
 }
 
 function render(summary) {
@@ -148,8 +205,9 @@ function render(summary) {
   renderList("sources-list", summary.acquisition.sources || [], "source");
   renderList("regions-list", summary.geo && summary.geo.regions || [], "region");
   renderFunnel(summary);
-  renderList("file-categories", summary.files.categories || [], "category");
+  renderList("file-categories", (summary.files.categories || []).map(row => ({ ...row, category: categoryLabel(row.category) })), "category");
   renderCompression(summary);
+  renderPromotions(summary);
   renderRecentFiles(summary);
   renderRecentEvents(summary);
 }
@@ -162,7 +220,7 @@ async function loadSummary() {
     logoutButton.hidden = true;
     return;
   }
-  if (!response.ok) throw new Error("Could not load analytics");
+  if (!response.ok) throw new Error("无法加载数据");
   render(await response.json());
   loginPanel.hidden = true;
   dashboard.hidden = false;
@@ -180,7 +238,7 @@ loginForm.addEventListener("submit", async (event) => {
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    showError(payload.message || "Login failed");
+    showError(payload.message || "登录失败");
     return;
   }
   passwordInput.value = "";

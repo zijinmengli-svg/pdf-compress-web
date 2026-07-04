@@ -16,6 +16,8 @@ const {
   summarizeAnalytics,
   classifyFileName,
   normalizeRegion,
+  normalizeUtm,
+  exportAnalyticsCsv,
 } = require("./lib/analytics");
 
 // 启动时探测 Ghostscript 版本，暴露到 /api/config，便于线上确认实际运行的 gs 版本（部署验证用）。
@@ -154,6 +156,28 @@ function visitorCountry(req) {
   );
 }
 
+function utmFromUrl(value) {
+  try {
+    const parsed = new URL(String(value || ""));
+    return normalizeUtm({
+      source: parsed.searchParams.get("utm_source") || "",
+      medium: parsed.searchParams.get("utm_medium") || "",
+      campaign: parsed.searchParams.get("utm_campaign") || "",
+      content: parsed.searchParams.get("utm_content") || "",
+      term: parsed.searchParams.get("utm_term") || "",
+    });
+  } catch {
+    return normalizeUtm({});
+  }
+}
+
+function requestUtm(req, extra = {}) {
+  const explicit = normalizeUtm(extra.utm || {});
+  if (explicit.source || explicit.medium || explicit.campaign || explicit.content || explicit.term) return explicit;
+  const referrer = extra.referrer != null ? extra.referrer : (req.headers.referer || req.headers.referrer || "");
+  return utmFromUrl(referrer);
+}
+
 function requestMeta(req, url, extra = {}) {
   const ua = req.headers["user-agent"] || "";
   const browser =
@@ -167,7 +191,7 @@ function requestMeta(req, url, extra = {}) {
     clientId: extra.clientId || req.headers["x-tinypdf-client-id"] || analyticsClientId(req),
     path: url ? url.pathname : "",
     referrer: extra.referrer != null ? extra.referrer : (req.headers.referer || req.headers.referrer || ""),
-    utm: extra.utm || {},
+    utm: requestUtm(req, extra),
     userAgent: ua,
     country: visitorCountry(req),
     device,
@@ -804,6 +828,26 @@ async function handleApiRequest(req, res, url) {
     return;
   }
 
+  if (url.pathname === "/api/admin/export" && req.method === "GET") {
+    if (!ADMIN_PASSWORD || !hasValidAdminSession(req)) {
+      sendError(res, 401, "UNAUTHORIZED", "Admin login required");
+      return;
+    }
+    const range = ["1m", "3m", "5m", "all"].includes(url.searchParams.get("range"))
+      ? url.searchParams.get("range")
+      : "all";
+    const events = await readAnalyticsEvents(ANALYTICS_FILE);
+    const csv = exportAnalyticsCsv(events, range);
+    res.writeHead(200, {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="tinypdf-analytics-${range}.csv"`,
+      "Cache-Control": "no-store",
+      "Content-Length": Buffer.byteLength(csv),
+    });
+    res.end(csv);
+    return;
+  }
+
   if (url.pathname === "/api/jobs" && req.method === "POST") {
     const contentType = req.headers["content-type"] || "";
     const boundaryMatch = contentType.match(/boundary=(.+)$/);
@@ -833,6 +877,10 @@ async function handleApiRequest(req, res, url) {
       }
       const pdfPart = parts.find(p => p.name === "pdf");
       const targetMBPart = parts.find(p => p.name === "targetMB");
+      const formField = name => {
+        const part = parts.find(p => p.name === name);
+        return part ? part.content.toString("utf8") : "";
+      };
 
       if (!pdfPart || !pdfPart.filename || !targetMBPart) {
         sendError(res, 400, "BAD_REQUEST", "Please choose a PDF file and enter a target size");
@@ -863,7 +911,15 @@ async function handleApiRequest(req, res, url) {
       const outputPath = path.join(os.tmpdir(), `pdf-compress-${jobId}-output.pdf`);
       const uploadBytes = pdfPart.content.length;
       const clientId = gaClientId(req);
-      const analyticsMeta = requestMeta(req, url);
+      const analyticsMeta = requestMeta(req, url, {
+        utm: {
+          source: formField("utmSource"),
+          medium: formField("utmMedium"),
+          campaign: formField("utmCampaign"),
+          content: formField("utmContent"),
+          term: formField("utmTerm"),
+        },
+      });
 
       await fsp.writeFile(inputPath, pdfPart.content);
 

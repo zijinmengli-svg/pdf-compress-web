@@ -87,6 +87,8 @@ function currentUtm() {
     source: params.get("utm_source") || "",
     medium: params.get("utm_medium") || "",
     campaign: params.get("utm_campaign") || "",
+    content: params.get("utm_content") || "",
+    term: params.get("utm_term") || "",
   };
 }
 
@@ -269,6 +271,12 @@ async function doCompress() {
   const body = new FormData();
   body.append("pdf", file);
   body.append("targetMB", targetInput.value.trim());
+  const utm = currentUtm();
+  body.append("utmSource", utm.source);
+  body.append("utmMedium", utm.medium);
+  body.append("utmCampaign", utm.campaign);
+  body.append("utmContent", utm.content);
+  body.append("utmTerm", utm.term);
   trackEvent("compress_started", {
     fileName: file.name,
     fileBytes: file.size,

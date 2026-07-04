@@ -55,6 +55,31 @@ function request(port, method, requestPath, body, headers = {}) {
   });
 }
 
+function parseCsv(text) {
+  return text.replace(/^\uFEFF/, "").trim().split(/\r?\n/).map(line => {
+    const cells = [];
+    let current = "";
+    let quoted = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      const next = line[i + 1];
+      if (quoted && ch === '"' && next === '"') {
+        current += '"';
+        i++;
+      } else if (ch === '"') {
+        quoted = !quoted;
+      } else if (!quoted && ch === ",") {
+        cells.push(current);
+        current = "";
+      } else {
+        current += ch;
+      }
+    }
+    cells.push(current);
+    return cells;
+  });
+}
+
 async function startServer(port, env) {
   const srv = spawn("node", ["server-simple.js"], {
     cwd: SRV_DIR,
@@ -108,14 +133,14 @@ async function startServer(port, env) {
   await test("summarizeAnalytics returns overview, funnel, sources, files, and recent events", async () => {
     const now = new Date("2026-07-03T12:00:00.000Z");
     const events = [
-      { ts: "2026-07-03T09:00:00.000Z", event: "page_view", sessionId: "s1", clientId: "c1", referrer: "https://dev.to/post", country: "US", data: {} },
-      { ts: "2026-07-03T09:01:00.000Z", event: "file_selected", sessionId: "s1", clientId: "c1", data: { fileName: "portfolio.pdf", fileCategory: "design", fileBytes: 4 * 1024 * 1024 } },
-      { ts: "2026-07-03T09:02:00.000Z", event: "compress_started", sessionId: "s1", clientId: "c1", data: { targetMB: 1 } },
-      { ts: "2026-07-03T09:03:00.000Z", event: "compress_success", sessionId: "s1", clientId: "c1", data: { originalBytes: 4 * 1024 * 1024, targetBytes: 1024 * 1024, resultBytes: 900 * 1024, reachedTarget: true, rasterized: false } },
-      { ts: "2026-07-03T09:04:00.000Z", event: "download_clicked", sessionId: "s1", clientId: "c1", data: {} },
-      { ts: "2026-07-03T09:05:00.000Z", event: "session_end", sessionId: "s1", clientId: "c1", data: { dwellSeconds: 300 } },
-      { ts: "2026-07-02T08:00:00.000Z", event: "page_view", sessionId: "s2", clientId: "c2", referrer: "", country: "JP", data: {} },
-      { ts: "2026-07-02T08:01:00.000Z", event: "compress_error", sessionId: "s2", clientId: "c2", data: { reason: "Encrypted PDFs are not supported" } },
+      { ts: "2026-07-03T09:00:00.000Z", event: "page_view", sessionId: "s1", clientId: "c1", referrer: "https://medium.com/@zijinmengli/post", country: "US", utm: { source: "medium", medium: "article", campaign: "portfolio_pdf_designers", content: "medium_article_20260703" }, data: {} },
+      { ts: "2026-07-03T09:01:00.000Z", event: "file_selected", sessionId: "s1", clientId: "c1", utm: { source: "medium", medium: "article", campaign: "portfolio_pdf_designers", content: "medium_article_20260703" }, data: { fileName: "portfolio.pdf", fileCategory: "design", fileBytes: 4 * 1024 * 1024 } },
+      { ts: "2026-07-03T09:02:00.000Z", event: "compress_started", sessionId: "s1", clientId: "c1", utm: { source: "medium", medium: "article", campaign: "portfolio_pdf_designers", content: "medium_article_20260703" }, data: { targetMB: 1 } },
+      { ts: "2026-07-03T09:03:00.000Z", event: "compress_success", sessionId: "s1", clientId: "c1", utm: { source: "medium", medium: "article", campaign: "portfolio_pdf_designers", content: "medium_article_20260703" }, data: { originalBytes: 4 * 1024 * 1024, targetBytes: 1024 * 1024, resultBytes: 900 * 1024, reachedTarget: true, rasterized: false } },
+      { ts: "2026-07-03T09:04:00.000Z", event: "download_clicked", sessionId: "s1", clientId: "c1", utm: { source: "medium", medium: "article", campaign: "portfolio_pdf_designers", content: "medium_article_20260703" }, data: {} },
+      { ts: "2026-07-03T09:05:00.000Z", event: "session_end", sessionId: "s1", clientId: "c1", utm: { source: "medium", medium: "article", campaign: "portfolio_pdf_designers", content: "medium_article_20260703" }, data: { dwellSeconds: 300 } },
+      { ts: "2026-07-02T08:00:00.000Z", event: "page_view", sessionId: "s2", clientId: "c2", referrer: "", country: "JP", utm: { source: "webdesignernews", campaign: "portfolio_pdf_designers", content: "wdn_submission_20260703" }, data: {} },
+      { ts: "2026-07-02T08:01:00.000Z", event: "compress_error", sessionId: "s2", clientId: "c2", utm: { source: "webdesignernews", campaign: "portfolio_pdf_designers", content: "wdn_submission_20260703" }, data: { reason: "Encrypted PDFs are not supported" } },
     ];
     const summary = summarizeAnalytics(events, now);
     assert.strictEqual(summary.overview.todayPageViews, 1);
@@ -127,7 +152,13 @@ async function startServer(port, env) {
     assert.strictEqual(summary.funnel.page_view, 2);
     assert.strictEqual(summary.funnel.file_selected, 1);
     assert.strictEqual(summary.funnel.compress_success, 1);
-    assert.strictEqual(summary.acquisition.sources[0].source, "dev.to");
+    assert.strictEqual(summary.acquisition.sources[0].source, "medium");
+    assert.strictEqual(summary.acquisition.promotions[0].source, "medium");
+    assert.strictEqual(summary.acquisition.promotions[0].content, "medium_article_20260703");
+    assert.strictEqual(summary.acquisition.promotions[0].visits, 1);
+    assert.strictEqual(summary.acquisition.promotions[0].visitors, 1);
+    assert.strictEqual(summary.acquisition.promotions[0].compressions, 1);
+    assert.strictEqual(summary.acquisition.promotions[0].downloads, 1);
     assert.strictEqual(summary.geo.regions[0].region, "US");
     assert.strictEqual(summary.geo.regions[0].count, 1);
     assert.strictEqual(summary.geo.regions[1].region, "JP");
@@ -201,7 +232,7 @@ async function startServer(port, env) {
     }
   });
 
-  await test("admin session can read summary for tracked events", async () => {
+  await test("admin session can read summary and export CSV for tracked events", async () => {
     const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "tinypdf-admin-password-"));
     const srv = await startServer(3822, {
       ADMIN_PASSWORD: "secret-pass",
@@ -217,6 +248,7 @@ async function startServer(port, env) {
         sessionId: "s-track",
         clientId: "c-track",
         referrer: "https://www.uneed.best/tool/tinypdf",
+        utm: { source: "medium", medium: "article", campaign: "portfolio_pdf_designers", content: "medium_article_20260703" },
         data: { fileName: "sales-deck.pdf", fileBytes: 2 * 1024 * 1024 },
       }, { "CF-IPCountry": "US" });
       assert.strictEqual(track.status, 200);
@@ -231,11 +263,23 @@ async function startServer(port, env) {
       assert.strictEqual(body.files.recentFileNames[0].fileName, "sales-deck.pdf");
       assert.strictEqual(body.geo.regions[0].region, "US");
       assert.strictEqual(body.geo.regions[0].count, 1);
+      assert.strictEqual(body.acquisition.promotions[0].source, "medium");
+      assert.strictEqual(body.acquisition.promotions[0].content, "medium_article_20260703");
+
+      const csv = await request(3822, "GET", "/api/admin/export?range=1m", null, { Cookie: cookie });
+      assert.strictEqual(csv.status, 200);
+      assert.ok(csv.headers["content-type"].includes("text/csv"));
+      assert.ok(csv.headers["content-disposition"].includes("tinypdf-analytics-1m.csv"));
+      const parsed = parseCsv(csv.body);
+      assert.deepStrictEqual(parsed[0].slice(0, 9), ["时间", "事件", "平台", "媒介", "活动", "文章/内容", "地区", "设备", "浏览器"]);
+      assert.ok(parsed.some(row => row.includes("medium_article_20260703") && row.includes("sales-deck.pdf")));
 
       const adminPage = await request(3822, "GET", "/admin");
       assert.strictEqual(adminPage.status, 200);
-      assert.ok(adminPage.body.includes("TinyPDF Analytics"));
-      assert.ok(adminPage.body.includes("Regions"));
+      assert.ok(adminPage.body.includes("TinyPDF 数据后台"));
+      assert.ok(adminPage.body.includes("推广来源"));
+      assert.ok(adminPage.body.includes("下载历史数据"));
+      assert.ok(adminPage.body.includes("近 1 个月"));
       assert.ok(adminPage.body.includes("/admin.js"));
     } finally {
       srv.kill("SIGKILL");

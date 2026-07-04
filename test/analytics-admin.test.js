@@ -108,13 +108,13 @@ async function startServer(port, env) {
   await test("summarizeAnalytics returns overview, funnel, sources, files, and recent events", async () => {
     const now = new Date("2026-07-03T12:00:00.000Z");
     const events = [
-      { ts: "2026-07-03T09:00:00.000Z", event: "page_view", sessionId: "s1", clientId: "c1", referrer: "https://dev.to/post", data: {} },
+      { ts: "2026-07-03T09:00:00.000Z", event: "page_view", sessionId: "s1", clientId: "c1", referrer: "https://dev.to/post", country: "US", data: {} },
       { ts: "2026-07-03T09:01:00.000Z", event: "file_selected", sessionId: "s1", clientId: "c1", data: { fileName: "portfolio.pdf", fileCategory: "design", fileBytes: 4 * 1024 * 1024 } },
       { ts: "2026-07-03T09:02:00.000Z", event: "compress_started", sessionId: "s1", clientId: "c1", data: { targetMB: 1 } },
       { ts: "2026-07-03T09:03:00.000Z", event: "compress_success", sessionId: "s1", clientId: "c1", data: { originalBytes: 4 * 1024 * 1024, targetBytes: 1024 * 1024, resultBytes: 900 * 1024, reachedTarget: true, rasterized: false } },
       { ts: "2026-07-03T09:04:00.000Z", event: "download_clicked", sessionId: "s1", clientId: "c1", data: {} },
       { ts: "2026-07-03T09:05:00.000Z", event: "session_end", sessionId: "s1", clientId: "c1", data: { dwellSeconds: 300 } },
-      { ts: "2026-07-02T08:00:00.000Z", event: "page_view", sessionId: "s2", clientId: "c2", referrer: "", data: {} },
+      { ts: "2026-07-02T08:00:00.000Z", event: "page_view", sessionId: "s2", clientId: "c2", referrer: "", country: "JP", data: {} },
       { ts: "2026-07-02T08:01:00.000Z", event: "compress_error", sessionId: "s2", clientId: "c2", data: { reason: "Encrypted PDFs are not supported" } },
     ];
     const summary = summarizeAnalytics(events, now);
@@ -128,6 +128,10 @@ async function startServer(port, env) {
     assert.strictEqual(summary.funnel.file_selected, 1);
     assert.strictEqual(summary.funnel.compress_success, 1);
     assert.strictEqual(summary.acquisition.sources[0].source, "dev.to");
+    assert.strictEqual(summary.geo.regions[0].region, "US");
+    assert.strictEqual(summary.geo.regions[0].count, 1);
+    assert.strictEqual(summary.geo.regions[1].region, "JP");
+    assert.strictEqual(summary.geo.regions[1].count, 1);
     assert.strictEqual(summary.files.categories[0].category, "design");
     assert.strictEqual(summary.files.recentFileNames[0].fileName, "portfolio.pdf");
     assert.strictEqual(summary.behavior.averageDwellSeconds, 300);
@@ -214,7 +218,7 @@ async function startServer(port, env) {
         clientId: "c-track",
         referrer: "https://www.uneed.best/tool/tinypdf",
         data: { fileName: "sales-deck.pdf", fileBytes: 2 * 1024 * 1024 },
-      });
+      }, { "CF-IPCountry": "US" });
       assert.strictEqual(track.status, 200);
 
       const login = await request(3822, "POST", "/api/admin/login", { password: "secret-pass" });
@@ -225,10 +229,13 @@ async function startServer(port, env) {
       const body = JSON.parse(summary.body);
       assert.strictEqual(body.files.categories[0].category, "presentation");
       assert.strictEqual(body.files.recentFileNames[0].fileName, "sales-deck.pdf");
+      assert.strictEqual(body.geo.regions[0].region, "US");
+      assert.strictEqual(body.geo.regions[0].count, 1);
 
       const adminPage = await request(3822, "GET", "/admin");
       assert.strictEqual(adminPage.status, 200);
       assert.ok(adminPage.body.includes("TinyPDF Analytics"));
+      assert.ok(adminPage.body.includes("Regions"));
       assert.ok(adminPage.body.includes("/admin.js"));
     } finally {
       srv.kill("SIGKILL");

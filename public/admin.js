@@ -135,16 +135,18 @@ function renderRecentEvents(summary) {
         <td>${text(formatTime(event.ts))}</td>
         <td>${text(event.event)}</td>
         <td>${text(sourceFor(event))}</td>
+        <td>${text(event.country || "Unknown")}</td>
         <td>${text(event.device || "-")}</td>
         <td>${text(details || "-")}</td>
       </tr>
     `;
-  }).join("") : `<tr><td colspan="5">No events yet</td></tr>`;
+  }).join("") : `<tr><td colspan="6">No events yet</td></tr>`;
 }
 
 function render(summary) {
   renderStats(summary);
   renderList("sources-list", summary.acquisition.sources || [], "source");
+  renderList("regions-list", summary.geo && summary.geo.regions || [], "region");
   renderFunnel(summary);
   renderList("file-categories", summary.files.categories || [], "category");
   renderCompression(summary);

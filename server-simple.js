@@ -15,6 +15,7 @@ const {
   readAnalyticsEvents,
   summarizeAnalytics,
   classifyFileName,
+  normalizeRegion,
 } = require("./lib/analytics");
 
 // 启动时探测 Ghostscript 版本，暴露到 /api/config，便于线上确认实际运行的 gs 版本（部署验证用）。
@@ -140,6 +141,19 @@ function analyticsClientId(req) {
   return readClientId(req) || gaClientId(req);
 }
 
+function visitorCountry(req) {
+  return normalizeRegion(
+    req.headers["cf-ipcountry"] ||
+    req.headers["x-vercel-ip-country"] ||
+    req.headers["cloudfront-viewer-country"] ||
+    req.headers["fastly-client-country"] ||
+    req.headers["x-appengine-country"] ||
+    req.headers["x-country-code"] ||
+    req.headers["x-forwarded-country"] ||
+    ""
+  );
+}
+
 function requestMeta(req, url, extra = {}) {
   const ua = req.headers["user-agent"] || "";
   const browser =
@@ -155,7 +169,7 @@ function requestMeta(req, url, extra = {}) {
     referrer: extra.referrer != null ? extra.referrer : (req.headers.referer || req.headers.referrer || ""),
     utm: extra.utm || {},
     userAgent: ua,
-    country: req.headers["cf-ipcountry"] || "",
+    country: visitorCountry(req),
     device,
     browser,
   };

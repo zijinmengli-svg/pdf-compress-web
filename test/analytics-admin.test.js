@@ -15,7 +15,7 @@ const {
 const { chooseAnalyticsFile } = require("../lib/analytics-path");
 
 let passed = 0, failed = 0;
-const SRV_DIR = "/Users/libin/Desktop/我的工作流集合/PDF压缩工具-最终版";
+const SRV_DIR = path.join(__dirname, "..");
 async function test(name, fn) {
   try {
     await fn();
@@ -135,8 +135,8 @@ async function startServer(port, env) {
     const events = [
       { ts: "2026-07-03T09:00:00.000Z", event: "page_view", sessionId: "s1", clientId: "c1", referrer: "https://medium.com/@zijinmengli/post", country: "US", utm: { source: "medium", medium: "article", campaign: "portfolio_pdf_designers", content: "medium_article_20260703" }, data: {} },
       { ts: "2026-07-03T09:01:00.000Z", event: "file_selected", sessionId: "s1", clientId: "c1", utm: { source: "medium", medium: "article", campaign: "portfolio_pdf_designers", content: "medium_article_20260703" }, data: { fileName: "portfolio.pdf", fileCategory: "design", fileBytes: 4 * 1024 * 1024 } },
-      { ts: "2026-07-03T09:02:00.000Z", event: "compress_started", sessionId: "s1", clientId: "c1", utm: { source: "medium", medium: "article", campaign: "portfolio_pdf_designers", content: "medium_article_20260703" }, data: { targetMB: 1 } },
-      { ts: "2026-07-03T09:03:00.000Z", event: "compress_success", sessionId: "s1", clientId: "c1", utm: { source: "medium", medium: "article", campaign: "portfolio_pdf_designers", content: "medium_article_20260703" }, data: { originalBytes: 4 * 1024 * 1024, targetBytes: 1024 * 1024, resultBytes: 900 * 1024, reachedTarget: true, rasterized: false } },
+      { ts: "2026-07-03T09:02:00.000Z", event: "compress_started", sessionId: "s1", clientId: "c1", utm: { source: "medium", medium: "article", campaign: "portfolio_pdf_designers", content: "medium_article_20260703" }, data: { fileName: "portfolio.pdf", fileCategory: "design", fileBytes: 4 * 1024 * 1024, targetMB: 1, targetBytes: 1024 * 1024 } },
+      { ts: "2026-07-03T09:03:00.000Z", event: "compress_success", sessionId: "s1", clientId: "c1", utm: { source: "medium", medium: "article", campaign: "portfolio_pdf_designers", content: "medium_article_20260703" }, data: { fileName: "portfolio.pdf", fileCategory: "design", originalBytes: 4 * 1024 * 1024, targetMB: 1, targetBytes: 1024 * 1024, resultBytes: 900 * 1024, reachedTarget: true, rasterized: false } },
       { ts: "2026-07-03T09:04:00.000Z", event: "download_clicked", sessionId: "s1", clientId: "c1", utm: { source: "medium", medium: "article", campaign: "portfolio_pdf_designers", content: "medium_article_20260703" }, data: {} },
       { ts: "2026-07-03T09:05:00.000Z", event: "session_end", sessionId: "s1", clientId: "c1", utm: { source: "medium", medium: "article", campaign: "portfolio_pdf_designers", content: "medium_article_20260703" }, data: { dwellSeconds: 300 } },
       { ts: "2026-07-02T08:00:00.000Z", event: "page_view", sessionId: "s2", clientId: "c2", referrer: "", country: "JP", utm: { source: "webdesignernews", campaign: "portfolio_pdf_designers", content: "wdn_submission_20260703" }, data: {} },
@@ -165,6 +165,10 @@ async function startServer(port, env) {
     assert.strictEqual(summary.geo.regions[1].count, 1);
     assert.strictEqual(summary.files.categories[0].category, "design");
     assert.strictEqual(summary.files.recentFileNames[0].fileName, "portfolio.pdf");
+    assert.strictEqual(summary.files.recentFileNames[0].fileBytes, 4 * 1024 * 1024);
+    assert.strictEqual(summary.files.recentFileNames[0].targetMB, 1);
+    assert.strictEqual(summary.files.recentFileNames[0].targetBytes, 1024 * 1024);
+    assert.strictEqual(summary.files.recentFileNames[0].resultBytes, 900 * 1024);
     assert.strictEqual(summary.behavior.averageDwellSeconds, 300);
     assert.strictEqual(summary.compression.errorReasons[0].reason, "Encrypted PDFs are not supported");
     assert.strictEqual(summary.recentEvents.length, 8);
@@ -173,7 +177,7 @@ async function startServer(port, env) {
   await test("summarizeAnalytics uses server compression events when client tracking is missing", async () => {
     const now = new Date("2026-07-03T12:00:00.000Z");
     const events = [
-      { ts: "2026-07-03T09:03:00.000Z", event: "compress_success", sessionId: "s1", clientId: "c1", data: { fileName: "client-portfolio.pdf", fileCategory: "design", originalBytes: 4 * 1024 * 1024, targetBytes: 1024 * 1024, resultBytes: 900 * 1024, reachedTarget: true } },
+      { ts: "2026-07-03T09:03:00.000Z", event: "compress_success", sessionId: "s1", clientId: "c1", data: { fileName: "client-portfolio.pdf", fileCategory: "design", originalBytes: 4 * 1024 * 1024, targetMB: 1, targetBytes: 1024 * 1024, resultBytes: 900 * 1024, reachedTarget: true } },
       { ts: "2026-07-03T09:04:00.000Z", event: "download_clicked", sessionId: "s1", clientId: "c1", data: { fileName: "client-portfolio.pdf", fileCategory: "design" } },
     ];
     const summary = summarizeAnalytics(events, now);
@@ -182,6 +186,9 @@ async function startServer(port, env) {
     assert.strictEqual(summary.files.categories[0].category, "design");
     assert.strictEqual(summary.files.recentFileNames[0].fileName, "client-portfolio.pdf");
     assert.strictEqual(summary.files.recentFileNames[0].fileBytes, 4 * 1024 * 1024);
+    assert.strictEqual(summary.files.recentFileNames[0].targetMB, 1);
+    assert.strictEqual(summary.files.recentFileNames[0].targetBytes, 1024 * 1024);
+    assert.strictEqual(summary.files.recentFileNames[0].resultBytes, 900 * 1024);
   });
 
   await test("summarizeAnalytics deduplicates client and server file events for one upload", async () => {
@@ -192,7 +199,7 @@ async function startServer(port, env) {
       { ts: "2026-07-03T09:00:01.000Z", event: "file_selected", ...shared },
       { ts: "2026-07-03T09:00:02.000Z", event: "compress_started", ...shared, data: { ...shared.data, targetMB: 1 } },
       { ts: "2026-07-03T09:00:03.000Z", event: "compress_started", ...shared, data: { ...shared.data, targetMB: 1 } },
-      { ts: "2026-07-03T09:00:04.000Z", event: "compress_success", ...shared, data: { ...shared.data, targetBytes: 1024 * 1024, resultBytes: 900 * 1024, reachedTarget: true } },
+      { ts: "2026-07-03T09:00:04.000Z", event: "compress_success", ...shared, data: { ...shared.data, targetMB: 1, targetBytes: 1024 * 1024, resultBytes: 900 * 1024, reachedTarget: true } },
     ];
     const summary = summarizeAnalytics(events, now);
     assert.strictEqual(summary.funnel.file_selected, 1);
@@ -261,6 +268,7 @@ async function startServer(port, env) {
       const body = JSON.parse(summary.body);
       assert.strictEqual(body.files.categories[0].category, "presentation");
       assert.strictEqual(body.files.recentFileNames[0].fileName, "sales-deck.pdf");
+      assert.strictEqual(body.files.recentFileNames[0].fileBytes, 2 * 1024 * 1024);
       assert.strictEqual(body.geo.regions[0].region, "US");
       assert.strictEqual(body.geo.regions[0].count, 1);
       assert.strictEqual(body.acquisition.promotions[0].source, "medium");
@@ -279,6 +287,8 @@ async function startServer(port, env) {
       assert.ok(adminPage.body.includes("TinyPDF 数据后台"));
       assert.ok(adminPage.body.includes("推广来源"));
       assert.ok(adminPage.body.includes("下载历史数据"));
+      assert.ok(adminPage.body.includes("用户输入目标"));
+      assert.ok(adminPage.body.includes("压缩后大小"));
       assert.ok(adminPage.body.includes("近 1 个月"));
       assert.ok(adminPage.body.includes("/admin.js"));
     } finally {

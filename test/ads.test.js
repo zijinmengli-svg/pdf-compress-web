@@ -1,10 +1,11 @@
 "use strict";
 const assert = require("assert");
 const http = require("http");
+const path = require("path");
 const { spawn } = require("child_process");
 const adSlot = require("../public/ad-slot.js");
 
-const SRV_DIR = "/Users/libin/Desktop/我的工作流集合/PDF压缩工具-最终版";
+const SRV_DIR = path.join(__dirname, "..");
 let passed = 0, failed = 0;
 function check(name, cond, detail) { (cond ? passed++ : failed++); console.log(`${cond ? "PASS" : "FAIL"} - ${name}${detail ? " :: " + detail : ""}`); }
 const sleep = ms => new Promise(r => setTimeout(r, ms));

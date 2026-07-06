@@ -573,6 +573,7 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
 
   const outputPath = job.outputPath;
   const downloadName = makeCompressedDownloadName(originalName);
+  const targetMB = Number((targetBytes / 1048576).toFixed(2));
 
   try {
     // ── 校验 PDF ──────────────────────────────────────────────────────────
@@ -693,6 +694,7 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
         fileName: job.originalName,
         fileCategory: classifyFileName(job.originalName),
         originalBytes,
+        targetMB,
         targetBytes,
         resultBytes,
         ratio: Number((ratio || 0).toFixed(3)),
@@ -962,12 +964,14 @@ async function handleApiRequest(req, res, url) {
         originalName: pdfPart.filename,
         analyticsMeta,
         targetBytes: parseSizeToBytes(targetMB),
+        targetMB,
         state: {
           id: jobId,
           status: "processing",
           progress: 0.05,
           message: "File uploaded",
           originalBytes: uploadBytes,
+          targetMB,
           targetBytes: parseSizeToBytes(targetMB),
           resultBytes: null,
           ratio: null
@@ -1047,6 +1051,9 @@ async function handleApiRequest(req, res, url) {
       data: {
         fileName: job.originalName,
         fileCategory: classifyFileName(job.originalName),
+        originalBytes: job.state.originalBytes || "",
+        targetMB: job.targetMB || "",
+        targetBytes: job.state.targetBytes || job.targetBytes || "",
         resultBytes: job.state.resultBytes || stat.size,
       },
     }).catch(() => {});

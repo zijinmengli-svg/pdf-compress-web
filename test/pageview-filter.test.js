@@ -2,9 +2,10 @@
 // 验证服务端 page_view 只对「真实顶层浏览器导航」上报，过滤爬虫/扫描/健康检查/预取，
 // 修正活跃用户虚高。用本地 GA mock 端点捕获事件。
 const http = require("http");
+const path = require("path");
 const { spawn } = require("child_process");
 
-const SRV_DIR = "/Users/libin/Desktop/我的工作流集合/PDF压缩工具-最终版";
+const SRV_DIR = path.join(__dirname, "..");
 const SRV_PORT = 3811, MOCK_PORT = 3812;
 const UA_CHROME = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 

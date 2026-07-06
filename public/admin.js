@@ -36,6 +36,11 @@ function formatBytes(bytes) {
   return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.round(n / 1024)} KB`;
 }
 
+function formatTargetSize(row) {
+  if (row && row.targetMB) return `${Number(row.targetMB).toLocaleString("zh-CN")} MB`;
+  return formatBytes(row && row.targetBytes);
+}
+
 function formatTime(value) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "-";
@@ -174,8 +179,10 @@ function renderRecentFiles(summary) {
       <td>${text(row.fileName)}</td>
       <td>${text(categoryLabel(row.category))}</td>
       <td>${text(formatBytes(row.fileBytes))}</td>
+      <td>${text(formatTargetSize(row))}</td>
+      <td>${text(formatBytes(row.resultBytes))}</td>
     </tr>
-  `).join("") : `<tr><td colspan="4">暂无上传文件名</td></tr>`;
+  `).join("") : `<tr><td colspan="6">暂无上传文件名</td></tr>`;
 }
 
 function renderRecentEvents(summary) {

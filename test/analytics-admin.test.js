@@ -191,6 +191,31 @@ async function startServer(port, env) {
     assert.strictEqual(summary.files.recentFileNames[0].resultBytes, 900 * 1024);
   });
 
+  await test("unique visitors only count users with page views", async () => {
+    const now = new Date("2026-07-03T12:00:00.000Z");
+    const events = [
+      { ts: "2026-07-03T09:00:00.000Z", event: "page_view", sessionId: "s1", clientId: "c1", data: {} },
+      { ts: "2026-07-03T09:01:00.000Z", event: "file_selected", sessionId: "s1", clientId: "c1", data: { fileName: "portfolio.pdf" } },
+      { ts: "2026-07-03T10:00:00.000Z", event: "compress_success", sessionId: "s2", clientId: "c2", data: { fileName: "missing-page-view.pdf" } },
+    ];
+    const summary = summarizeAnalytics(events, now);
+    assert.strictEqual(summary.overview.pageViews7d, 1);
+    assert.strictEqual(summary.overview.uniqueVisitors7d, 1);
+  });
+
+  await test("average compression time uses earliest start for each successful upload", async () => {
+    const now = new Date("2026-07-03T12:00:00.000Z");
+    const shared = { sessionId: "s1", clientId: "c1", data: { fileName: "portfolio.pdf" } };
+    const events = [
+      { ts: "2026-07-03T09:00:00.000Z", event: "compress_started", ...shared },
+      { ts: "2026-07-03T09:00:30.000Z", event: "compress_started", ...shared },
+      { ts: "2026-07-03T09:02:00.000Z", event: "compress_success", ...shared },
+      { ts: "2026-07-03T10:00:00.000Z", event: "compress_success", sessionId: "s2", clientId: "c2", data: { fileName: "no-start.pdf" } },
+    ];
+    const summary = summarizeAnalytics(events, now);
+    assert.strictEqual(summary.behavior.averageCompressionSeconds, 120);
+  });
+
   await test("summarizeAnalytics deduplicates client and server file events for one upload", async () => {
     const now = new Date("2026-07-03T12:00:00.000Z");
     const shared = { sessionId: "same-session", clientId: "same-client", data: { fileName: "sales-deck.pdf", fileCategory: "presentation", fileBytes: 2 * 1024 * 1024 } };

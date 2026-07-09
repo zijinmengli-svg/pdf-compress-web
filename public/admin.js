@@ -109,6 +109,7 @@ function renderStats(summary) {
     ["今日下载", summary.overview.todayDownloads],
     ["成功率", formatPercent(summary.overview.successRate7d)],
     ["平均停留", `${summary.behavior.averageDwellSeconds || 0} 秒`],
+    ["压缩用时", `${summary.behavior.averageCompressionSeconds || 0} 秒`],
   ];
   document.getElementById("overview-grid").innerHTML = items.map(([label, value]) => `
     <div class="stat-card">

@@ -5,104 +5,191 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex, nofollow" />
     <title>TinyPDF 数据后台</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="./styles.css" />
   </head>
-  <body>
-    <main class="shell admin-shell">
-      <header class="dashboard-header">
-        <div>
-          <span class="eyebrow">TinyPDF</span>
-          <h1 class="admin-title">TinyPDF 数据后台</h1>
+  <body class="admin-page">
+    <main class="admin-dashboard-shell">
+      <aside class="admin-sidebar" aria-label="TinyPDF 后台导航">
+        <div class="admin-brand">
+          <div class="admin-logo-mark">T</div>
+          <div>
+            <strong>Tinypdf</strong>
+            <span>DATA CONSOLE</span>
+          </div>
         </div>
-        <button class="secondary-button admin-logout" id="logout-button" type="button" hidden>退出登录</button>
-      </header>
 
-      <section class="panel admin-login" id="login-panel">
-        <h2>后台登录</h2>
-        <form class="form compact-form" id="login-form">
-          <label class="field">
-            <span>密码</span>
-            <div class="inline-field">
-              <input id="admin-password" type="password" autocomplete="current-password" required />
+        <nav class="admin-nav">
+          <p>工作台</p>
+          <a class="is-active" href="#overview-section"><span>⌂</span>数据总览</a>
+          <a href="#traffic-section"><span>↗</span>访问分析</a>
+          <a href="#files-section"><span>▤</span>文件记录</a>
+          <a href="#promotion-section"><span>◎</span>推广来源</a>
+        </nav>
+
+        <div class="admin-profile-card">
+          <div class="admin-avatar">A</div>
+          <div>
+            <strong>Admin</strong>
+            <span>管理员</span>
+          </div>
+          <button class="admin-text-button" id="logout-button" type="button" hidden>退出</button>
+        </div>
+      </aside>
+
+      <section class="admin-main-panel">
+        <header class="admin-topbar">
+          <div>
+            <h1>数据总览</h1>
+            <p>查看 Tinypdf 的核心业务与转化数据</p>
+          </div>
+          <div class="admin-topbar-actions">
+            <span class="admin-pill">近 30 天</span>
+            <button class="admin-outline-button" id="refresh-button" type="button">刷新数据</button>
+            <div class="admin-account-mini">
+              <div class="admin-avatar">A</div>
+              <div><strong>管理员</strong><span>已登录</span></div>
             </div>
-          </label>
-          <p class="field-error" id="login-error" hidden></p>
-          <button type="submit">打开数据后台</button>
-        </form>
-      </section>
-
-      <section id="dashboard" hidden>
-        <div class="admin-section-head">
-          <h2>概览</h2>
-          <button class="secondary-button" id="refresh-button" type="button">刷新</button>
-        </div>
-        <div class="stat-grid" id="overview-grid"></div>
-
-        <section class="table-card">
-          <h3>下载历史数据</h3>
-          <div class="download-actions">
-            <a class="secondary-button" href="/api/admin/export?range=1m">近 1 个月</a>
-            <a class="secondary-button" href="/api/admin/export?range=3m">近 3 个月</a>
-            <a class="secondary-button" href="/api/admin/export?range=5m">近 5 个月</a>
-            <a class="secondary-button" href="/api/admin/export?range=all">全部数据</a>
           </div>
+        </header>
+
+        <section class="admin-login-layer" id="login-panel">
+          <form class="admin-login-card" id="login-form">
+            <div class="admin-logo-mark">T</div>
+            <h2>登录 Tinypdf</h2>
+            <p>请输入管理员账号与密码进入数据后台</p>
+            <label class="admin-field">
+              <span>账号</span>
+              <input type="text" value="admin@tinypdf.cn" autocomplete="username" disabled />
+            </label>
+            <label class="admin-field">
+              <span>密码</span>
+              <input id="admin-password" type="password" autocomplete="current-password" required />
+            </label>
+            <p class="field-error" id="login-error" hidden></p>
+            <button class="admin-primary-button" type="submit">登录后台</button>
+            <small>忘记密码？请联系系统管理员</small>
+          </form>
         </section>
 
-        <div class="dashboard-grid">
-          <section class="table-card">
-            <h3>访问来源</h3>
-            <div id="sources-list" class="mini-list"></div>
+        <section class="admin-content" id="dashboard" hidden>
+          <section id="overview-section" class="admin-section-title">
+            <div>
+              <h2>核心指标</h2>
+              <p id="date-range-copy">数据区间：近 30 天</p>
+            </div>
           </section>
-          <section class="table-card">
-            <h3>国家/地区</h3>
-            <div id="regions-list" class="mini-list"></div>
-          </section>
-          <section class="table-card">
-            <h3>用户流程</h3>
-            <div id="funnel-list" class="mini-list"></div>
-          </section>
-          <section class="table-card">
-            <h3>文件类型</h3>
-            <div id="file-categories" class="mini-list"></div>
-          </section>
-          <section class="table-card">
-            <h3>压缩结果</h3>
-            <div id="compression-list" class="mini-list"></div>
-          </section>
-        </div>
+          <div class="admin-metric-grid" id="overview-grid"></div>
+          <div class="admin-secondary-grid" id="secondary-grid"></div>
 
-        <section class="table-card">
-          <h3>推广来源</h3>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>平台</th><th>文章/内容</th><th>活动</th><th>访问</th><th>访客</th><th>压缩</th><th>下载</th></tr></thead>
-              <tbody id="promotion-rows"></tbody>
-            </table>
-          </div>
-        </section>
+          <section class="admin-analytics-grid" id="traffic-section">
+            <article class="admin-card admin-chart-card">
+              <div class="admin-card-head">
+                <div>
+                  <h3>访问趋势</h3>
+                  <p>页面浏览量与独立访客的 30 天变化</p>
+                </div>
+                <div class="admin-legend"><span><i></i>浏览量</span><span><i></i>访客</span></div>
+              </div>
+              <div id="trend-chart" class="trend-chart"></div>
+            </article>
 
-        <section class="table-card">
-          <h3>最近上传的文件名</h3>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>时间</th><th>文件名</th><th>分类</th><th>原始大小</th><th>用户输入目标</th><th>压缩后大小</th></tr></thead>
-              <tbody id="recent-files"></tbody>
-            </table>
-          </div>
-        </section>
+            <article class="admin-card">
+              <div class="admin-card-head">
+                <div>
+                  <h3>用户转化漏斗</h3>
+                  <p>从访问到下载的完整链路</p>
+                </div>
+              </div>
+              <div id="funnel-list" class="admin-funnel-list"></div>
+            </article>
+          </section>
 
-        <section class="table-card">
-          <h3>最近事件</h3>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>时间</th><th>事件</th><th>来源</th><th>地区</th><th>设备</th><th>详情</th></tr></thead>
-              <tbody id="recent-events"></tbody>
-            </table>
-          </div>
+          <section class="admin-three-grid">
+            <article class="admin-card">
+              <h3>访问来源</h3>
+              <p>按来源渠道统计访客占比</p>
+              <div id="sources-list" class="admin-source-donut"></div>
+            </article>
+            <article class="admin-card">
+              <h3>国家/地区</h3>
+              <p>按独立访客所在地区统计</p>
+              <div id="regions-list" class="admin-bar-list"></div>
+            </article>
+            <article class="admin-card">
+              <h3>文件类型分布</h3>
+              <p>最近 30 天上传文件分类</p>
+              <div id="file-categories" class="admin-bar-list"></div>
+            </article>
+            <article class="admin-card">
+              <h3>压缩结果</h3>
+              <p>任务成功率与平均性能</p>
+              <div id="compression-list" class="admin-compression-result"></div>
+            </article>
+          </section>
+
+          <section class="admin-card admin-table-card" id="files-section">
+            <div class="admin-card-head">
+              <div>
+                <h3>最近上传文件</h3>
+                <p>显示最近 5 条压缩任务记录</p>
+              </div>
+              <a class="admin-outline-link" href="/api/admin/export?range=all">查看全部</a>
+            </div>
+            <div class="table-wrap">
+              <table class="admin-data-table">
+                <thead><tr><th>时间</th><th>文件名</th><th>分类</th><th>原始大小</th><th>用户输入目标</th><th>压缩后大小</th><th>状态</th></tr></thead>
+                <tbody id="recent-files"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="admin-card admin-export-card">
+            <div>
+              <h3>下载历史数据</h3>
+              <p>导出 CSV 后可在表格工具里继续分析。</p>
+            </div>
+            <div class="download-actions">
+              <a class="admin-outline-link" href="/api/admin/export?range=1m">近 1 个月</a>
+              <a class="admin-outline-link" href="/api/admin/export?range=3m">近 3 个月</a>
+              <a class="admin-outline-link" href="/api/admin/export?range=5m">近 5 个月</a>
+              <a class="admin-outline-link" href="/api/admin/export?range=all">全部数据</a>
+            </div>
+          </section>
+
+          <section class="admin-card admin-table-card" id="promotion-section">
+            <div class="admin-card-head">
+              <div>
+                <h3>推广来源</h3>
+                <p>带 UTM 的推广链接会在这里聚合。</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="admin-data-table">
+                <thead><tr><th>平台</th><th>文章/内容</th><th>活动</th><th>访问</th><th>访客</th><th>压缩</th><th>下载</th></tr></thead>
+                <tbody id="promotion-rows"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="admin-card admin-table-card">
+            <div class="admin-card-head">
+              <div>
+                <h3>最近事件</h3>
+                <p>用于排查用户流程和异常行为。</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="admin-data-table">
+                <thead><tr><th>时间</th><th>事件</th><th>来源</th><th>地区</th><th>设备</th><th>详情</th></tr></thead>
+                <tbody id="recent-events"></tbody>
+              </table>
+            </div>
+          </section>
         </section>
       </section>
     </main>
 
-    <script src="/admin.js?v=1.3.0" defer></script>
+    <script src="./admin-navigation.js?v=1.0.0" defer></script>
+    <script src="./admin.js?v=1.4.0" defer></script>
   </body>
 </html>

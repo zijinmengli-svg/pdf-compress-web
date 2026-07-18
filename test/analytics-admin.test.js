@@ -149,6 +149,13 @@ async function startServer(port, env) {
     assert.strictEqual(summary.overview.todayCompressions, 1);
     assert.strictEqual(summary.overview.todayDownloads, 1);
     assert.strictEqual(summary.overview.successRate7d, 50);
+    assert.strictEqual(summary.overview.comparisons.pageViews30d.delta, 2);
+    assert.strictEqual(summary.overview.comparisons.pageViews30d.percent, 0);
+    assert.strictEqual(summary.overview.comparisons.uniqueVisitors30d.delta, 2);
+    assert.strictEqual(summary.overview.comparisons.compressSuccess30d.delta, 1);
+    assert.strictEqual(summary.overview.comparisons.downloads30d.delta, 1);
+    assert.strictEqual(summary.trends.daily.length, 30);
+    assert.deepStrictEqual(summary.trends.daily.at(-1), { date: "2026-07-03", label: "07/03", pageViews: 1, visitors: 1 });
     assert.strictEqual(summary.funnel.page_view, 2);
     assert.strictEqual(summary.funnel.file_selected, 1);
     assert.strictEqual(summary.funnel.compress_success, 1);
@@ -169,7 +176,9 @@ async function startServer(port, env) {
     assert.strictEqual(summary.files.recentFileNames[0].targetMB, 1);
     assert.strictEqual(summary.files.recentFileNames[0].targetBytes, 1024 * 1024);
     assert.strictEqual(summary.files.recentFileNames[0].resultBytes, 900 * 1024);
+    assert.strictEqual(summary.files.recentFileNames[0].status, "success");
     assert.strictEqual(summary.behavior.averageDwellSeconds, 300);
+    assert.strictEqual(summary.compression.averageSavingsRate, 78);
     assert.strictEqual(summary.compression.errorReasons[0].reason, "Encrypted PDFs are not supported");
     assert.strictEqual(summary.recentEvents.length, 8);
   });

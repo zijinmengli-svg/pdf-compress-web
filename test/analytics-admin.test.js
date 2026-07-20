@@ -299,6 +299,7 @@ async function startServer(port, env) {
       const cookie = login.headers["set-cookie"].find(value => value.startsWith("tinypdf_admin=")).split(";")[0];
       const summary = await request(3822, "GET", "/api/admin/summary", null, { Cookie: cookie });
       assert.strictEqual(summary.status, 200);
+      assert.strictEqual(summary.headers["cache-control"], "no-store");
       const body = JSON.parse(summary.body);
       assert.strictEqual(body.files.categories[0].category, "presentation");
       assert.strictEqual(body.files.recentFileNames[0].fileName, "sales-deck.pdf");
@@ -323,8 +324,15 @@ async function startServer(port, env) {
       assert.ok(adminPage.body.includes("下载历史数据"));
       assert.ok(adminPage.body.includes("用户输入目标"));
       assert.ok(adminPage.body.includes("压缩后大小"));
+      assert.ok(adminPage.body.includes("refresh-status"));
+      assert.ok(adminPage.body.includes("上次更新"));
       assert.ok(adminPage.body.includes("近 1 个月"));
       assert.ok(adminPage.body.includes("/admin.js"));
+
+      const adminJs = await fsp.readFile(path.join(SRV_DIR, "public", "admin.js"), "utf8");
+      assert.ok(adminJs.includes("refresh-status"));
+      assert.ok(adminJs.includes("刷新中"));
+      assert.ok(adminJs.includes('cache: "no-store"'));
     } finally {
       srv.kill("SIGKILL");
       await fsp.rm(dir, { recursive: true, force: true });

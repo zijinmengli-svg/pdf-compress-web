@@ -7,11 +7,38 @@ const loginError = document.getElementById("login-error");
 const dashboard = document.getElementById("dashboard");
 const logoutButton = document.getElementById("logout-button");
 const refreshButton = document.getElementById("refresh-button");
+const refreshStatus = document.getElementById("refresh-status");
 const dateRangeCopy = document.getElementById("date-range-copy");
 
 function showError(message) {
   loginError.hidden = !message;
   loginError.textContent = message || "";
+}
+
+function setRefreshStatus(state, message) {
+  if (!refreshStatus) return;
+  refreshStatus.classList.remove("is-loading", "is-success", "is-error");
+  if (state) refreshStatus.classList.add(`is-${state}`);
+  refreshStatus.textContent = message;
+}
+
+function setRefreshLoading(isLoading) {
+  if (refreshButton) {
+    refreshButton.disabled = isLoading;
+    refreshButton.textContent = isLoading ? "刷新中" : "刷新数据";
+  }
+  if (dashboard) {
+    dashboard.classList.toggle("is-refreshing", isLoading);
+  }
+}
+
+function refreshedAtMessage() {
+  const time = new Date().toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  return `上次更新：${time}`;
 }
 
 function text(value) {
@@ -334,19 +361,35 @@ function render(summary) {
   renderRecentEvents(summary);
 }
 
-async function loadSummary() {
-  const response = await fetch("/api/admin/summary", { credentials: "same-origin" });
-  if (response.status === 401) {
-    dashboard.hidden = true;
-    loginPanel.hidden = false;
-    logoutButton.hidden = true;
-    return;
+async function loadSummary({ manual = false } = {}) {
+  if (manual) {
+    setRefreshStatus("loading", "数据更新中，请稍候...");
   }
-  if (!response.ok) throw new Error("无法加载数据");
-  render(await response.json());
-  loginPanel.hidden = true;
-  dashboard.hidden = false;
-  logoutButton.hidden = false;
+  setRefreshLoading(true);
+  try {
+    const response = await fetch(`/api/admin/summary?ts=${Date.now()}`, {
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    if (response.status === 401) {
+      dashboard.hidden = true;
+      loginPanel.hidden = false;
+      logoutButton.hidden = true;
+      setRefreshStatus("", "上次更新：等待登录");
+      return;
+    }
+    if (!response.ok) throw new Error("无法加载数据");
+    render(await response.json());
+    loginPanel.hidden = true;
+    dashboard.hidden = false;
+    logoutButton.hidden = false;
+    setRefreshStatus("success", refreshedAtMessage());
+  } catch (error) {
+    setRefreshStatus("error", `刷新失败：${error.message || "请稍后重试"}`);
+    throw error;
+  } finally {
+    setRefreshLoading(false);
+  }
 }
 
 loginForm.addEventListener("submit", async (event) => {
@@ -374,5 +417,7 @@ logoutButton.addEventListener("click", async () => {
   logoutButton.hidden = true;
 });
 
-refreshButton.addEventListener("click", loadSummary);
+refreshButton.addEventListener("click", () => {
+  loadSummary({ manual: true }).catch(error => showError(error.message));
+});
 loadSummary().catch(error => showError(error.message));

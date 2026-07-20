@@ -826,7 +826,7 @@ async function handleApiRequest(req, res, url) {
       return;
     }
     const events = await readAnalyticsEvents(ANALYTICS_FILE);
-    json(res, 200, summarizeAnalytics(events));
+    json(res, 200, summarizeAnalytics(events), { "Cache-Control": "no-store" });
     return;
   }
 

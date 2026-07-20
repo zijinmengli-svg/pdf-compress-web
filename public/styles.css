@@ -1250,6 +1250,65 @@ body.admin-page {
   gap: 12px;
 }
 
+.admin-refresh-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.refresh-status {
+  min-width: 158px;
+  color: var(--admin-muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.refresh-status.is-loading,
+.refresh-status.is-success,
+.refresh-status.is-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.refresh-status.is-loading {
+  color: #315f9c;
+}
+
+.refresh-status.is-success {
+  color: #087a4a;
+}
+
+.refresh-status.is-error {
+  color: #b42318;
+}
+
+.refresh-status.is-loading::before {
+  content: "";
+  width: 11px;
+  height: 11px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  animation: admin-refresh-spin 0.8s linear infinite;
+}
+
+.admin-content.is-refreshing {
+  opacity: 0.58;
+  pointer-events: none;
+  transition: opacity 0.16s ease;
+}
+
+.admin-outline-button:disabled {
+  opacity: 0.68;
+  cursor: wait;
+}
+
+@keyframes admin-refresh-spin {
+  to { transform: rotate(360deg); }
+}
+
 .admin-pill,
 .admin-outline-button,
 .admin-outline-link,
@@ -1830,10 +1889,12 @@ body.admin-page {
 @media (max-width: 920px) {
   .admin-topbar,
   .admin-topbar-actions,
+  .admin-refresh-control,
   .admin-export-card {
     align-items: flex-start;
     flex-direction: column;
   }
+  .refresh-status { min-width: 0; }
   .admin-account-mini { padding-left: 0; border-left: 0; }
   .admin-content { padding: 20px 16px 42px; }
   .admin-metric-grid,

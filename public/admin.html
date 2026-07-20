@@ -44,7 +44,10 @@
           </div>
           <div class="admin-topbar-actions">
             <span class="admin-pill">近 30 天</span>
-            <button class="admin-outline-button" id="refresh-button" type="button">刷新数据</button>
+            <div class="admin-refresh-control">
+              <span class="refresh-status" id="refresh-status" aria-live="polite">上次更新：等待刷新</span>
+              <button class="admin-outline-button" id="refresh-button" type="button">刷新数据</button>
+            </div>
             <div class="admin-account-mini">
               <div class="admin-avatar">A</div>
               <div><strong>管理员</strong><span>已登录</span></div>
@@ -190,6 +193,6 @@
     </main>
 
     <script src="./admin-navigation.js?v=1.0.0" defer></script>
-    <script src="./admin.js?v=1.4.0" defer></script>
+    <script src="./admin.js?v=1.5.0" defer></script>
   </body>
 </html>

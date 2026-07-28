@@ -9,6 +9,8 @@ const { spawn } = require("child_process");
 const {
   classifyFileName,
   normalizeLandingLanguage,
+  sourceFor,
+  sourceCategoryFor,
   appendAnalyticsEvent,
   readAnalyticsEvents,
   summarizeAnalytics,
@@ -97,6 +99,16 @@ async function startServer(port, env) {
 }
 
 (async () => {
+  await test("source attribution only labels exact libindesign referrals as owned", async () => {
+    assert.strictEqual(sourceFor({ referrer: "https://libindesign.cn/work/tinypdf", utm: {} }), "libindesign.cn");
+    assert.strictEqual(sourceFor({ referrer: "https://www.libindesign.cn/work/tinypdf", utm: {} }), "libindesign.cn");
+    assert.strictEqual(sourceFor({ referrer: "https://notes.libindesign.cn/tinypdf", utm: {} }), "libindesign.cn");
+    assert.strictEqual(sourceCategoryFor({ referrer: "https://libindesign.cn/work/tinypdf", utm: {} }), "owned_referral");
+    assert.strictEqual(sourceFor({ referrer: "", utm: {} }), "Direct");
+    assert.strictEqual(sourceCategoryFor({ referrer: "", utm: {} }), "direct");
+    assert.strictEqual(sourceCategoryFor({ referrer: "https://libindesign.cn.evil.example/", utm: {} }), "referral");
+  });
+
   await test("normalizeLandingLanguage keeps supported landing languages", async () => {
     assert.strictEqual(normalizeLandingLanguage("zh-CN"), "zh-CN");
     assert.strictEqual(normalizeLandingLanguage("zh"), "zh-CN");

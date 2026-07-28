@@ -8,6 +8,7 @@ const path = require("path");
 const { spawn } = require("child_process");
 const {
   classifyFileName,
+  normalizeLandingLanguage,
   appendAnalyticsEvent,
   readAnalyticsEvents,
   summarizeAnalytics,
@@ -96,6 +97,13 @@ async function startServer(port, env) {
 }
 
 (async () => {
+  await test("normalizeLandingLanguage keeps supported landing languages", async () => {
+    assert.strictEqual(normalizeLandingLanguage("zh-CN"), "zh-CN");
+    assert.strictEqual(normalizeLandingLanguage("zh"), "zh-CN");
+    assert.strictEqual(normalizeLandingLanguage("en-US"), "en");
+    assert.strictEqual(normalizeLandingLanguage("fr"), "");
+  });
+
   await test("classifyFileName uses filename-only keyword rules", async () => {
     assert.strictEqual(classifyFileName("Q3 investor presentation.pdf"), "presentation");
     assert.strictEqual(classifyFileName("ux-portfolio-final.pdf"), "design");
@@ -112,6 +120,7 @@ async function startServer(port, env) {
     const first = await appendAnalyticsEvent(file, {
       event: "file_selected",
       sessionId: "s1",
+      landingLanguage: "zh-CN",
       data: { fileName: "portfolio.pdf" },
     });
     await fsp.appendFile(file, "{not json}\n");
@@ -124,6 +133,7 @@ async function startServer(port, env) {
     assert.strictEqual(events.length, 2);
     assert.strictEqual(events[0].event, "file_selected");
     assert.strictEqual(events[0].data.fileCategory, "design");
+    assert.strictEqual(events[0].landingLanguage, "zh-CN");
     assert.ok(events[0].ts, "event timestamp is added");
     assert.strictEqual(events[1].event, second.event);
     assert.ok(first.ts <= second.ts);

@@ -1,13 +1,16 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="TinyPDF FAQ - answers about compressing PDFs to a target file size online." />
-    <meta name="keywords" content="PDF compression FAQ,PDF compressor help,compress PDF tutorial,target PDF size" />
-    <title>FAQ - TinyPDF</title>
+    <meta name="description" content="TinyPDF 常见问题：了解如何把 PDF 压缩到指定大小、压缩质量、文件删除时间和使用限制。" />
+    <meta name="robots" content="index, follow" />
+    <title>常见问题｜TinyPDF 指定大小 PDF 压缩工具</title>
     <link rel="stylesheet" href="/styles.css" />
-      <!-- Google Analytics -->
+    <link rel="canonical" href="https://tinypdf.cn/faq" />
+    <link rel="alternate" hreflang="zh-CN" href="https://tinypdf.cn/faq" />
+    <link rel="alternate" hreflang="en" href="https://tinypdf.cn/en/faq" />
+    <link rel="alternate" hreflang="x-default" href="https://tinypdf.cn/faq" />
     <script async src="https://analytics.tinypdf.cn/gtag/js?id=G-EGP898J99G"></script>
     <script>
       window.dataLayer = window.dataLayer || [];
@@ -20,42 +23,55 @@
     <main class="content-shell">
       <header class="topbar">
         <a href="/" class="eyebrow">TinyPDF</a>
+        <a class="language-link" href="/en/faq" lang="en" hreflang="en">English</a>
       </header>
 
-      <section class="panel legal-card">
-        <h1>FAQ</h1>
+      <article class="panel legal-card faq-card">
+        <h1>常见问题</h1>
 
-        <p><strong>What does TinyPDF do?</strong></p>
-        <p>TinyPDF compresses one PDF to a target size in MB. It is useful when a form, email system, portfolio site, or upload portal has a strict file-size limit.</p>
+        <section>
+          <h2>TinyPDF 是什么？</h2>
+          <p>TinyPDF 是免费的在线 PDF 压缩工具。你可以输入目标文件大小，工具会把一个 PDF 尽可能压缩到接近该大小，适合邮件、报名系统、作品集网站或上传平台有文件大小限制的场景。</p>
+        </section>
 
-        <p><strong>Why did the result not reach my exact target size?</strong></p>
-        <p>Some PDFs have limited room for compression. When an exact target is not safely reachable, TinyPDF returns the smallest usable result it can produce without intentionally damaging the file.</p>
+        <section>
+          <h2>为什么结果没有精确达到目标大小？</h2>
+          <p>不同 PDF 的图片、字体和版式结构不同，可压缩空间也不同。如果无法安全达到目标，TinyPDF 会返回当前能够生成的最小可用结果，而不是故意损坏文件。</p>
+        </section>
 
-        <p><strong>Will my page count or page size change?</strong></p>
-        <p>The tool is designed to keep the same page count, page dimensions, and layout whenever possible.</p>
+        <section>
+          <h2>页数、页面尺寸或版式会改变吗？</h2>
+          <p>TinyPDF 会尽可能保留原有页数、页面尺寸和版式，但极小的目标可能需要更强压缩，清晰度可能下降。</p>
+        </section>
 
-        <p><strong>Why might quality drop on very small targets?</strong></p>
-        <p>If the target is much smaller than the original file, images may need stronger compression. In difficult cases, the tool may convert pages to images to reach a smaller size, which can reduce sharpness.</p>
+        <section>
+          <h2>文件会保存多久？</h2>
+          <p>上传文件和压缩结果只用于临时处理，约一小时后会自动删除。压缩完成后请及时下载。</p>
+        </section>
 
-        <p><strong>How long are files kept?</strong></p>
-        <p>Uploaded and compressed files are temporary. They are automatically deleted after about one hour, so download your result soon after compression finishes.</p>
+        <section>
+          <h2>需要注册或付费吗？</h2>
+          <p>不需要注册。当前压缩流程可以免费使用，单个文件最高 100MB。</p>
+        </section>
 
-        <p><strong>Do I need an account?</strong></p>
-        <p>No. TinyPDF does not require registration for the compression workflow.</p>
-      </section>
+        <section>
+          <h2>是否支持手机？</h2>
+          <p>TinyPDF 当前主要维护桌面网页体验。手机可以查看页面，但建议在桌面浏览器完成文件压缩。</p>
+        </section>
+      </article>
     </main>
 
     <footer class="site-footer">
       <div class="footer-inner">
         <div>
-          <strong>Support:</strong>
+          <strong>支持：</strong>
           <a href="mailto:zijinnmengli@gmail.com">zijinnmengli@gmail.com</a>
         </div>
-        <nav class="footer-links">
-          <a href="/privacy">Privacy</a>
-          <a href="/terms">Terms</a>
-          <a href="/contact">Contact</a>
-          <a href="/faq">FAQ</a>
+        <nav class="footer-links" aria-label="网站信息">
+          <a href="/privacy">隐私</a>
+          <a href="/terms">条款</a>
+          <a href="/contact">联系</a>
+          <a href="/faq">常见问题</a>
         </nav>
       </div>
     </footer>

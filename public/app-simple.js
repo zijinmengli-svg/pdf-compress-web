@@ -17,6 +17,9 @@ const submitButton   = document.getElementById("submit-button");
 const downloadRow    = document.getElementById("download-row");
 const downloadButton = document.getElementById("download-button");
 
+const i18n = window.TinyPDFI18n.createTranslator(document.documentElement.lang);
+const t = (key, vars) => i18n.text(key, vars);
+
 // Runtime configuration from /api/config, with defaults before initialization.
 let ADS_ENABLED   = false; // Whether display ads are enabled.
 let AD_CLIENT     = "";    // AdSense publisher ID.
@@ -27,7 +30,7 @@ let MAX_UPLOAD_MB = 100;   // Hard upload limit in MB.
 function resetSubmitButton() {
   submitButton.classList.remove("btn-compressing", "btn-disabled");
   submitButton.disabled = false;
-  submitButton.textContent = "Compress PDF";
+  submitButton.textContent = t("compressButton");
 }
 
 // Quality warning bubble
@@ -99,7 +102,10 @@ function trackEvent(event, data = {}, options = {}) {
     clientId: getClientId(),
     referrer: document.referrer || "",
     utm: currentUtm(),
-    data,
+    data: {
+      landingLanguage: i18n.language,
+      ...data,
+    },
   });
   if (options.beacon && navigator.sendBeacon) {
     navigator.sendBeacon("/api/track", new Blob([payload], { type: "application/json" }));
@@ -130,27 +136,42 @@ function showError(target, message) {
 
 function setMetrics(state) {
   const rows = [
-    ["Original size", formatMB(state.originalBytes)],
-    ["Target size", formatMB(state.targetBytes)],
-    ["Compressed size", state.resultBytes ? formatMB(state.resultBytes) : "--"],
-    ["Compression ratio", (state.ratio != null && Number.isFinite(state.ratio)) ? ratioText(state.ratio) : "--"]
+    [t("metricOriginal"), formatMB(state.originalBytes)],
+    [t("metricTarget"), formatMB(state.targetBytes)],
+    [t("metricResult"), state.resultBytes ? formatMB(state.resultBytes) : "--"],
+    [t("metricRatio"), (state.ratio != null && Number.isFinite(state.ratio)) ? ratioText(state.ratio) : "--"]
   ];
   metrics.innerHTML = rows
     .map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`)
     .join("");
 }
 
+function localizeStateMessage(message) {
+  const keysByMessage = {
+    "File uploaded": "fileUploaded",
+    "Starting compression": "startingCompression",
+    "Applying stronger compression": "applyingStrongerCompression",
+    "Searching for the clearest version that fits the target size...": "searchingClearest",
+    "Compression complete": "statusComplete",
+    "Compression failed": "statusFailed",
+    "The original file is already no larger than the target size": "originalAlreadySmall",
+    "The file has limited room for compression. This is the smallest usable result we could produce.": "limitedCompression",
+  };
+  const key = keysByMessage[message];
+  return key ? t(key) : message;
+}
+
 function setStatus(state) {
   statusCard.hidden = false;
   statusTitle.textContent =
-    state.status === "done"  ? "Compression complete" :
-    state.status === "error" ? "Compression failed" : "Processing";
+    state.status === "done"  ? t("statusComplete") :
+    state.status === "error" ? t("statusFailed") : t("statusProcessing");
   const percent = Math.round((state.progress || 0) * 100);
   statusPercent.textContent = `${percent}%`;
   progressFill.style.width  = `${percent}%`;
-  let msg = state.error || state.message || "";
+  let msg = localizeStateMessage(state.error || state.message || "");
   if (state.status === "done" && state.rasterized) {
-    msg += (msg ? " " : "") + "Note: to reach the target size, pages were converted to images, so sharpness may be lower.";
+    msg += (msg ? " " : "") + t("rasterizedNote");
   }
   statusMessage.textContent  = msg;
   setMetrics(state);
@@ -158,27 +179,27 @@ function setStatus(state) {
 }
 
 function validateFile(file) {
-  if (!file) return "Please choose a valid PDF file";
-  if (!file.name.toLowerCase().endsWith(".pdf")) return "Only PDF files are supported";
-  if (file.size <= 0) return "Please choose a valid PDF file";
-  if (file.size > MAX_UPLOAD_MB * 1024 * 1024) return `File is too large. The current limit is ${MAX_UPLOAD_MB}MB`;
+  if (!file) return t("validPdf");
+  if (!file.name.toLowerCase().endsWith(".pdf")) return t("pdfOnly");
+  if (file.size <= 0) return t("validPdf");
+  if (file.size > MAX_UPLOAD_MB * 1024 * 1024) return t("fileTooLarge", { max: MAX_UPLOAD_MB });
   return "";
 }
 
 function validateTarget(file) {
   const raw = targetInput.value.trim();
-  if (!raw) return "Enter a target file size";
-  if (!/^\d+(\.\d+)?$/.test(raw)) return "Enter a valid number";
+  if (!raw) return t("targetRequired");
+  if (!/^\d+(\.\d+)?$/.test(raw)) return t("targetNumber");
   const numeric = Number(raw);
-  if (!Number.isFinite(numeric)) return "Enter a valid number";
-  if (numeric <= 0) return "Target size must be greater than 0";
-  if (file && numeric >= file.size / 1024 / 1024) return "Target size must be smaller than the original file";
+  if (!Number.isFinite(numeric)) return t("targetNumber");
+  if (numeric <= 0) return t("targetPositive");
+  if (file && numeric >= file.size / 1024 / 1024) return t("targetSmaller");
   return "";
 }
 
 function updateFileState(file) {
   if (!file) {
-    fileMeta.textContent = "Drag a file here, or click to choose one";
+    fileMeta.textContent = t("uploadPrompt");
     showError(fileError, "");
     return;
   }
@@ -214,13 +235,13 @@ async function submitCompression(body) {
     body
   });
   const payload  = await response.json();
-  if (!response.ok) throw new Error(payload.message || "The server is busy. Please try again later.");
+  if (!response.ok) throw new Error(payload.message || t("serverBusy"));
 
   activeJobId = payload.id;
   setStatus({
     status: payload.status,
     progress: 0.06,
-    message: "Checking the file",
+    message: t("checkingFile"),
     originalBytes: payload.originalBytes,
     targetBytes: payload.targetBytes,
     resultBytes: null,
@@ -256,12 +277,12 @@ async function doCompress() {
 
   submitButton.disabled = true;
   submitButton.classList.add("btn-compressing");
-  submitButton.textContent = "Compressing...";
+  submitButton.textContent = t("compressing");
   downloadRow.hidden = true;
   setStatus({
     status: "processing",
     progress: 0.02,
-    message: "Uploading the file",
+    message: t("uploadingFile"),
     originalBytes: file.size,
     targetBytes: parseFloat(targetInput.value) * 1024 * 1024,
     resultBytes: null,
@@ -277,6 +298,7 @@ async function doCompress() {
   body.append("utmCampaign", utm.campaign);
   body.append("utmContent", utm.content);
   body.append("utmTerm", utm.term);
+  body.append("landingLanguage", i18n.language);
   trackEvent("compress_started", {
     fileName: file.name,
     fileBytes: file.size,
@@ -289,8 +311,8 @@ async function doCompress() {
     setStatus({
       status: "error",
       progress: 1,
-      message: error.message || "The server is busy. Please try again later.",
-      error: error.message || "The server is busy. Please try again later.",
+      message: error.message || t("serverBusy"),
+      error: error.message || t("serverBusy"),
       originalBytes: file.size,
       targetBytes: parseFloat(targetInput.value) * 1024 * 1024,
       resultBytes: null,
@@ -318,7 +340,7 @@ dropzone.addEventListener("drop", (e) => {
   dropzone.classList.remove("is-dragover");
   const files = e.dataTransfer?.files;
   if (!files || files.length !== 1) {
-    showError(fileError, "Please upload one PDF file at a time");
+    showError(fileError, t("uploadOne"));
     return;
   }
   fileInput.files = files;
@@ -329,6 +351,13 @@ dropzone.addEventListener("drop", (e) => {
 targetInput.addEventListener("input", () => {
   showError(targetError, validateTarget(fileInput.files?.[0]));
   checkQualityWarning();
+  window.clearTimeout(targetInput.trackTimer);
+  targetInput.trackTimer = window.setTimeout(() => {
+    const value = Number(targetInput.value);
+    if (Number.isFinite(value) && value > 0) {
+      trackEvent("target_entered", { targetMB: value });
+    }
+  }, 500);
 });
 
 downloadButton.addEventListener("click", startDownload);
@@ -355,6 +384,13 @@ window.addEventListener("pagehide", () => {
 trackEvent("page_view", {
   pageLocation: window.location.href,
   pageTitle: document.title,
+  landingLanguage: i18n.language,
+});
+
+trackEvent("landing_view", {
+  pageLocation: window.location.href,
+  pageTitle: document.title,
+  landingLanguage: i18n.language,
 });
 
 // Initialization: load runtime configuration from the server.
@@ -373,7 +409,7 @@ async function initConfig() {
   }
   const usageDisplay = document.getElementById("usage-display");
   if (usageDisplay) {
-    usageDisplay.textContent = `Free unlimited use · One file up to ${MAX_UPLOAD_MB}MB`;
+    usageDisplay.textContent = t("uploadLimit", { max: MAX_UPLOAD_MB });
   }
   // Initialize the display ad slot only when ads are enabled and configured.
   if (window.initAdSlot) {
@@ -381,4 +417,6 @@ async function initConfig() {
   }
 }
 
+submitButton.textContent = t("compressButton");
+downloadButton.textContent = t("downloadButton");
 initConfig();

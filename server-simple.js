@@ -17,6 +17,7 @@ const {
   classifyFileName,
   normalizeRegion,
   normalizeUtm,
+  normalizeLandingLanguage,
   exportAnalyticsCsv,
 } = require("./lib/analytics");
 
@@ -196,6 +197,7 @@ function requestMeta(req, url, extra = {}) {
     country: visitorCountry(req),
     device,
     browser,
+    landingLanguage: normalizeLandingLanguage(extra.landingLanguage),
   };
 }
 
@@ -785,6 +787,7 @@ async function handleApiRequest(req, res, url) {
           clientId: body.clientId || analyticsClientId(req),
           referrer: body.referrer,
           utm: body.utm || {},
+          landingLanguage: body.landingLanguage || (body.data && body.data.landingLanguage),
         }),
         data: body.data || {},
       });
@@ -914,6 +917,7 @@ async function handleApiRequest(req, res, url) {
       const uploadBytes = pdfPart.content.length;
       const clientId = gaClientId(req);
       const analyticsMeta = requestMeta(req, url, {
+        landingLanguage: formField("landingLanguage"),
         utm: {
           source: formField("utmSource"),
           medium: formField("utmMedium"),
@@ -1118,6 +1122,7 @@ function isRealBrowser(req) {
 async function handleStatic(req, res, url) {
   let pathname = url.pathname;
   if (pathname === "/") pathname = "/index.html";
+  else if (pathname === "/en" || pathname === "/en/") pathname = "/en/index.html";
   // 无扩展名路径（如 /terms /privacy /contact /faq）回退到对应 .html，使无后缀链接可访问。
   else if (!path.extname(pathname)) pathname += ".html";
   const filePath = path.join(PUBLIC_DIR, pathname);

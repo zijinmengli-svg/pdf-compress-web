@@ -25,6 +25,7 @@ let ADS_ENABLED   = false; // Whether display ads are enabled.
 let AD_CLIENT     = "";    // AdSense publisher ID.
 let AD_SLOT       = "";    // AdSense slot ID.
 let MAX_UPLOAD_MB = 100;   // Hard upload limit in MB.
+let WEB_REQUEST_TOKEN = "";
 
 // Submit button state
 function resetSubmitButton() {
@@ -52,6 +53,7 @@ function checkQualityWarning() {
 // Utilities
 let activeEvents       = null;
 let activeJobId        = null;
+let activeJobAccessToken = "";
 let activeDownloadName = "compressed.pdf";
 let lastTrackedFileSignature = "";
 const pageStartedAt = Date.now();
@@ -216,9 +218,9 @@ function updateFileState(file) {
 }
 
 async function startDownload() {
-  if (!activeJobId) return;
+  if (!activeJobId || !activeJobAccessToken) return;
   const link = document.createElement("a");
-  link.href = `/api/jobs/${activeJobId}/download`;
+  link.href = `/api/jobs/${activeJobId}/download?access=${encodeURIComponent(activeJobAccessToken)}`;
   link.download = activeDownloadName;
   document.body.appendChild(link);
   link.click();
@@ -231,13 +233,21 @@ async function submitCompression(body) {
     headers: {
       "X-TinyPDF-Session-Id": getSessionId(),
       "X-TinyPDF-Client-Id": getClientId(),
+      "X-TinyPDF-Web-Token": WEB_REQUEST_TOKEN,
     },
     body
   });
   const payload  = await response.json();
-  if (!response.ok) throw new Error(payload.message || t("serverBusy"));
+  if (!response.ok) {
+    throw new Error(
+      payload.code === "WEBSITE_SESSION_REQUIRED" || payload.code === "JOB_ACCESS_DENIED"
+        ? t("websiteSessionRequired")
+        : (payload.message || t("serverBusy"))
+    );
+  }
 
   activeJobId = payload.id;
+  activeJobAccessToken = payload.accessToken || "";
   setStatus({
     status: payload.status,
     progress: 0.06,
@@ -249,7 +259,9 @@ async function submitCompression(body) {
   });
 
   if (activeEvents) activeEvents.close();
-  activeEvents = new EventSource(`/api/jobs/${payload.id}/events`);
+  activeEvents = new EventSource(
+    `/api/jobs/${payload.id}/events?access=${encodeURIComponent(activeJobAccessToken)}`
+  );
   activeEvents.onmessage = (message) => {
     const state = JSON.parse(message.data);
     activeDownloadName = state.downloadName || activeDownloadName;
@@ -274,11 +286,14 @@ async function doCompress() {
   showError(fileError, fileValidation);
   showError(targetError, targetValidation);
   if (fileValidation || targetValidation) return;
+  await configReady;
 
   submitButton.disabled = true;
   submitButton.classList.add("btn-compressing");
   submitButton.textContent = t("compressing");
   downloadRow.hidden = true;
+  activeJobId = null;
+  activeJobAccessToken = "";
   setStatus({
     status: "processing",
     progress: 0.02,
@@ -403,6 +418,7 @@ async function initConfig() {
       if (typeof cfg.adClient    === "string")  AD_CLIENT     = cfg.adClient;
       if (typeof cfg.adSlot      === "string")  AD_SLOT       = cfg.adSlot;
       if (typeof cfg.maxUploadMB === "number")  MAX_UPLOAD_MB = cfg.maxUploadMB;
+      if (typeof cfg.webRequestToken === "string") WEB_REQUEST_TOKEN = cfg.webRequestToken;
     }
   } catch {
     // Keep defaults when the network request fails.
@@ -419,4 +435,4 @@ async function initConfig() {
 
 submitButton.textContent = t("compressButton");
 downloadButton.textContent = t("downloadButton");
-initConfig();
+const configReady = initConfig();

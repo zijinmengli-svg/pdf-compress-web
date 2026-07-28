@@ -11,6 +11,17 @@ const { COMPRESS, searchBestConfig } = require("./lib/compress-search");
 const { makeCompressedDownloadName } = require("./lib/download-name");
 const { chooseAnalyticsFile } = require("./lib/analytics-path");
 const {
+  WEB_SESSION_MAX_AGE_MS,
+  createWebSession,
+  verifyWebSession,
+  requestTokenFor,
+  verifyRequestToken,
+  isAutomatedUserAgent,
+  isSameOriginRequest,
+  createJobAccess,
+  verifyJobAccess,
+} = require("./lib/web-session");
+const {
   appendAnalyticsEvent,
   readAnalyticsEvents,
   summarizeAnalytics,
@@ -32,7 +43,9 @@ const PUBLIC_DIR = path.join(ROOT, "public");
 const ANALYTICS_FILE = chooseAnalyticsFile(process.env, ROOT);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.randomBytes(32).toString("hex");
+const WEB_SESSION_SECRET = process.env.WEB_SESSION_SECRET || ADMIN_SESSION_SECRET;
 const ADMIN_COOKIE = "tinypdf_admin";
+const WEB_SESSION_COOKIE = "tinypdf_web_session";
 const ADMIN_SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 const MAX_UPLOAD_MB    = 100;   // 硬上限：超出直接 413 拒绝（服务端强制，不可绕过）
@@ -74,6 +87,17 @@ function newClientId() {
   return `${Math.floor(Math.random() * 1e9)}.${Math.floor(Date.now() / 1000)}`;
 }
 
+function appendSetCookie(res, cookie) {
+  const current = res.getHeader("Set-Cookie");
+  if (!current) {
+    res.setHeader("Set-Cookie", cookie);
+  } else if (Array.isArray(current)) {
+    res.setHeader("Set-Cookie", [...current, cookie]);
+  } else {
+    res.setHeader("Set-Cookie", [current, cookie]);
+  }
+}
+
 // 只读取 client_id（读不到给一个临时随机值，不持久化）。用于无法写 Set-Cookie 的场合。
 function gaClientId(req) {
   return readClientId(req) || newClientId();
@@ -86,10 +110,7 @@ function ensureClientId(req, res) {
   const existing = readClientId(req);
   if (existing) return existing;
   const id = newClientId();
-  res.setHeader(
-    "Set-Cookie",
-    `tinypdf_cid=${id}; Path=/; Max-Age=63072000; SameSite=Lax; HttpOnly; Secure`
-  );
+  appendSetCookie(res, `tinypdf_cid=${id}; Path=/; Max-Age=63072000; SameSite=Lax; HttpOnly; Secure`);
   return id;
 }
 
@@ -142,6 +163,41 @@ function parseCookies(req) {
 
 function analyticsClientId(req) {
   return readClientId(req) || gaClientId(req);
+}
+
+function makeWebSessionCookie(req, value) {
+  const host = req.headers.host || "";
+  const secure = /(^|\.)tinypdf\.cn(?::\d+)?$/i.test(host) || req.headers["x-forwarded-proto"] === "https";
+  return `${WEB_SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; Max-Age=${Math.floor(WEB_SESSION_MAX_AGE_MS / 1000)}; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+}
+
+function webSessionContext(req) {
+  const value = parseCookies(req)[WEB_SESSION_COOKIE] || "";
+  return {
+    value,
+    claims: verifyWebSession(value, WEB_SESSION_SECRET),
+  };
+}
+
+function validWebsiteRequest(req, requireRequestToken = false) {
+  if (isAutomatedUserAgent(req.headers["user-agent"])) return null;
+  const session = webSessionContext(req);
+  if (!session.claims || !isSameOriginRequest(req)) return null;
+  if (requireRequestToken && !verifyRequestToken(
+    session.value,
+    req.headers["x-tinypdf-web-token"],
+    WEB_SESSION_SECRET
+  )) return null;
+  return session;
+}
+
+function rejectWebsiteSession(res) {
+  sendError(
+    res,
+    403,
+    "WEBSITE_SESSION_REQUIRED",
+    "Open or refresh TinyPDF in your browser and try again."
+  );
 }
 
 function visitorCountry(req) {
@@ -761,18 +817,32 @@ async function handleMultipart(req, boundary, maxSize) {
 
 async function handleApiRequest(req, res, url) {
   if (url.pathname === "/api/config" && req.method === "GET") {
+    const session = webSessionContext(req);
     json(res, 200, {
       largeFileMB: LARGE_FILE_MB,
       adsEnabled:  AD_ENABLED_CFG,
       adClient:    AD_CLIENT_CFG,
       adSlot:      AD_SLOT_CFG,
       maxUploadMB: MAX_UPLOAD_MB,
-      gsVersion:   GS_VERSION
+      gsVersion:   GS_VERSION,
+      webRequestToken: session.claims && !isAutomatedUserAgent(req.headers["user-agent"])
+        ? requestTokenFor(session.value, WEB_SESSION_SECRET)
+        : "",
     });
     return;
   }
 
   if (url.pathname === "/api/track" && req.method === "POST") {
+    const session = webSessionContext(req);
+    if (isAutomatedUserAgent(req.headers["user-agent"]) || !session.claims) {
+      setSecurityHeaders(res);
+      res.writeHead(204, {
+        "X-Robots-Tag": "noindex, nofollow, noarchive",
+        "Cache-Control": "no-store",
+      });
+      res.end();
+      return;
+    }
     try {
       const body = await readJsonBody(req);
       const eventName = String(body.event || "").trim();
@@ -785,8 +855,8 @@ async function handleApiRequest(req, res, url) {
         ...requestMeta(req, url, {
           sessionId: body.sessionId || "",
           clientId: body.clientId || analyticsClientId(req),
-          referrer: body.referrer,
-          utm: body.utm || {},
+          referrer: session.claims.attribution.referrer,
+          utm: session.claims.attribution.utm,
           landingLanguage: body.landingLanguage || (body.data && body.data.landingLanguage),
         }),
         data: body.data || {},
@@ -854,6 +924,11 @@ async function handleApiRequest(req, res, url) {
   }
 
   if (url.pathname === "/api/jobs" && req.method === "POST") {
+    const websiteSession = validWebsiteRequest(req, true);
+    if (!websiteSession) {
+      rejectWebsiteSession(res);
+      return;
+    }
     const contentType = req.headers["content-type"] || "";
     const boundaryMatch = contentType.match(/boundary=(.+)$/);
     if (!boundaryMatch) {
@@ -918,14 +993,10 @@ async function handleApiRequest(req, res, url) {
       const clientId = gaClientId(req);
       const analyticsMeta = requestMeta(req, url, {
         landingLanguage: formField("landingLanguage"),
-        utm: {
-          source: formField("utmSource"),
-          medium: formField("utmMedium"),
-          campaign: formField("utmCampaign"),
-          content: formField("utmContent"),
-          term: formField("utmTerm"),
-        },
+        referrer: websiteSession.claims.attribution.referrer,
+        utm: websiteSession.claims.attribution.utm,
       });
+      const jobAccess = createJobAccess(websiteSession.claims);
 
       await fsp.writeFile(inputPath, pdfPart.content);
 
@@ -967,6 +1038,7 @@ async function handleApiRequest(req, res, url) {
         outputPath,
         originalName: pdfPart.filename,
         analyticsMeta,
+        ...jobAccess,
         targetBytes: parseSizeToBytes(targetMB),
         targetMB,
         state: {
@@ -992,6 +1064,7 @@ async function handleApiRequest(req, res, url) {
 
       json(res, 200, {
         ...job.state,
+        accessToken: job.accessToken,
         config: {
           siteName: "TinyPDF",
           maxUploadMB: MAX_UPLOAD_MB
@@ -1005,22 +1078,29 @@ async function handleApiRequest(req, res, url) {
 
   if (url.pathname.startsWith("/api/jobs/") && url.pathname.endsWith("/events")) {
     const jobId = url.pathname.slice("/api/jobs/".length, -"/events".length);
-    if (!jobs.has(jobId)) {
+    const job = jobs.get(jobId);
+    if (!job) {
       sendError(res, 404, "NOT_FOUND", "Job not found");
       return;
     }
+    const websiteSession = validWebsiteRequest(req);
+    if (!websiteSession || !verifyJobAccess(job, websiteSession.claims, url.searchParams.get("access"))) {
+      sendError(res, 403, "JOB_ACCESS_DENIED", "This job is not available in the current website session.");
+      return;
+    }
 
+    setSecurityHeaders(res);
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
-      "Connection": "keep-alive"
+      "Connection": "keep-alive",
+      "X-Robots-Tag": "noindex, nofollow, noarchive",
     });
 
     const streams = eventStreams.get(jobId) || [];
     streams.push(res);
     eventStreams.set(jobId, streams);
 
-    const job = jobs.get(jobId);
     if (job) {
       res.write(`data: ${JSON.stringify(job.state)}\n\n`);
     }
@@ -1037,6 +1117,11 @@ async function handleApiRequest(req, res, url) {
     const job = jobs.get(jobId);
     if (!job || job.state.status !== "done") {
       sendError(res, 404, "NOT_FOUND", "File not found");
+      return;
+    }
+    const websiteSession = validWebsiteRequest(req);
+    if (!websiteSession || !verifyJobAccess(job, websiteSession.claims, url.searchParams.get("access"))) {
+      sendError(res, 403, "JOB_ACCESS_DENIED", "This job is not available in the current website session.");
       return;
     }
 
@@ -1064,6 +1149,7 @@ async function handleApiRequest(req, res, url) {
     res.writeHead(200, {
       "Content-Type": "application/pdf",
       "Content-Length": stat.size,
+      "X-Robots-Tag": "noindex, nofollow, noarchive",
       // RFC 6266 / RFC 5987：filename* 支持非 ASCII，filename 做 ASCII 兜底
       "Content-Disposition": `attachment; filename="compressed.pdf"; filename*=UTF-8''${encodedName}`
     });
@@ -1079,6 +1165,8 @@ function json(res, statusCode, payload, extraHeaders = {}) {
   setSecurityHeaders(res);
   res.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
+    "X-Robots-Tag": "noindex, nofollow, noarchive",
+    "Cache-Control": "no-store",
     ...extraHeaders
   });
   res.end(JSON.stringify(payload));
@@ -1108,7 +1196,7 @@ const MIME_TYPES = {
 function isRealBrowser(req) {
   const ua = req.headers["user-agent"] || "";
   if (!/Mozilla|Chrome|Safari|Firefox|Edg/i.test(ua)) return false;
-  if (/bot|crawl|spider|slurp|monitor|healthcheck|uptime|pingdom|curl|wget|python-requests|headless|lighthouse|node-fetch|axios|okhttp|go-http|java\/|libwww|scrapy|ahrefs|semrush|mj12|facebookexternalhit|yandex|baidu|sogou/i.test(ua)) return false;
+  if (isAutomatedUserAgent(ua)) return false;
   // 必须是真实浏览器的顶层页面导航：现代浏览器导航都带 Sec-Fetch-Mode=navigate；
   // 爬虫/扫描器/健康检查/Cloudflare 探测/预取多半不带这些头——借此过滤掉它们造成的活跃用户虚高。
   if (req.headers["sec-fetch-mode"] !== "navigate") return false;
@@ -1151,8 +1239,13 @@ async function handleStatic(req, res, url) {
     // 真实浏览器访问首页：在写响应头之前解析/分配稳定 client_id（新访客种第一方 cookie），
     // 供服务端 page_view 上报使用，修正国内用户因无 _ga cookie 每次被算作新用户的问题。
     let pageViewCid = null;
-    if (pathname === "/index.html" && isRealBrowser(req)) {
+    if ((pathname === "/index.html" || pathname === "/zh/index.html") && isRealBrowser(req)) {
       pageViewCid = ensureClientId(req, res);
+      const session = createWebSession(WEB_SESSION_SECRET, {
+        referrer: req.headers.referer || req.headers.referrer || "",
+        utm: utmFromUrl(`http://${req.headers.host || "tinypdf.cn"}${url.pathname}${url.search}`),
+      });
+      appendSetCookie(res, makeWebSessionCookie(req, session.value));
     }
 
     res.writeHead(200, {

@@ -306,14 +306,22 @@ async function startServer(port, env) {
       const denied = await request(3822, "GET", "/api/admin/summary");
       assert.strictEqual(denied.status, 401);
 
+      const landing = await request(
+        3822,
+        "GET",
+        "/?utm_source=medium&utm_medium=article&utm_campaign=portfolio_pdf_designers&utm_content=medium_article_20260703",
+        null,
+        { Referer: "https://www.uneed.best/tool/tinypdf" }
+      );
+      const webCookie = landing.headers["set-cookie"]
+        .find(value => value.startsWith("tinypdf_web_session="))
+        .split(";")[0];
       const track = await request(3822, "POST", "/api/track", {
         event: "file_selected",
         sessionId: "s-track",
         clientId: "c-track",
-        referrer: "https://www.uneed.best/tool/tinypdf",
-        utm: { source: "medium", medium: "article", campaign: "portfolio_pdf_designers", content: "medium_article_20260703" },
         data: { fileName: "sales-deck.pdf", fileBytes: 2 * 1024 * 1024 },
-      }, { "CF-IPCountry": "US" });
+      }, { "CF-IPCountry": "US", Cookie: webCookie });
       assert.strictEqual(track.status, 200);
 
       const login = await request(3822, "POST", "/api/admin/login", { password: "secret-pass" });

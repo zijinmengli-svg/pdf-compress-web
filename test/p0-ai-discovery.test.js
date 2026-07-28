@@ -75,11 +75,17 @@ async function startServer() {
   try {
     await check("legacy English routes permanently redirect to the default English routes", async () => {
       const homepage = await get("/en/");
+      const homepageFile = await get("/en/index.html");
       const faq = await get("/en/faq");
+      const faqFile = await get("/en/faq.html");
       assert.strictEqual(homepage.status, 301);
       assert.strictEqual(homepage.headers.location, "/");
+      assert.strictEqual(homepageFile.status, 301);
+      assert.strictEqual(homepageFile.headers.location, "/");
       assert.strictEqual(faq.status, 301);
       assert.strictEqual(faq.headers.location, "/faq");
+      assert.strictEqual(faqFile.status, 301);
+      assert.strictEqual(faqFile.headers.location, "/faq");
     });
 
     await check("robots allows public AI discovery but keeps APIs private", async () => {

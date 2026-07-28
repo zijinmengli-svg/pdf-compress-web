@@ -1211,7 +1211,9 @@ async function handleStatic(req, res, url) {
   const legacyRedirects = new Map([
     ["/en", "/"],
     ["/en/", "/"],
+    ["/en/index.html", "/"],
     ["/en/faq", "/faq"],
+    ["/en/faq.html", "/faq"],
   ]);
   if (legacyRedirects.has(url.pathname)) {
     setSecurityHeaders(res);

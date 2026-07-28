@@ -1120,9 +1120,21 @@ function isRealBrowser(req) {
 }
 
 async function handleStatic(req, res, url) {
+  const legacyRedirects = new Map([
+    ["/en", "/"],
+    ["/en/", "/"],
+    ["/en/faq", "/faq"],
+  ]);
+  if (legacyRedirects.has(url.pathname)) {
+    setSecurityHeaders(res);
+    res.writeHead(301, { Location: legacyRedirects.get(url.pathname) });
+    res.end();
+    return;
+  }
+
   let pathname = url.pathname;
   if (pathname === "/") pathname = "/index.html";
-  else if (pathname === "/en" || pathname === "/en/") pathname = "/en/index.html";
+  else if (pathname === "/zh" || pathname === "/zh/") pathname = "/zh/index.html";
   // 无扩展名路径（如 /terms /privacy /contact /faq）回退到对应 .html，使无后缀链接可访问。
   else if (!path.extname(pathname)) pathname += ".html";
   const filePath = path.join(PUBLIC_DIR, pathname);

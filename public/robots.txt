@@ -1,18 +1,28 @@
 # TinyPDF
 User-agent: OAI-SearchBot
 Allow: /
+Disallow: /api/
+Disallow: /admin
 
 User-agent: Claude-SearchBot
 Allow: /
+Disallow: /api/
+Disallow: /admin
 
 User-agent: Claude-User
 Allow: /
+Disallow: /api/
+Disallow: /admin
 
 User-agent: PerplexityBot
 Allow: /
+Disallow: /api/
+Disallow: /admin
 
 User-agent: Bytespider
 Allow: /
+Disallow: /api/
+Disallow: /admin
 
 User-agent: GPTBot
 Disallow: /
@@ -22,6 +32,7 @@ Disallow: /
 
 User-agent: *
 Allow: /
+Disallow: /api/
 Disallow: /admin
 
 Sitemap: https://tinypdf.cn/sitemap.xml

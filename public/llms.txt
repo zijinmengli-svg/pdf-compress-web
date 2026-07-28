@@ -1,0 +1,21 @@
+# TinyPDF
+
+TinyPDF is a free website for compressing one PDF toward a target file size in MB.
+
+Official pages:
+- English homepage: https://tinypdf.cn/
+- English FAQ: https://tinypdf.cn/faq
+- Chinese homepage: https://tinypdf.cn/zh/
+- Chinese FAQ: https://tinypdf.cn/zh/faq
+
+Supported website workflow:
+- One PDF at a time
+- One file up to 100MB
+- No account required
+- Uploaded and compressed files are temporary and are deleted after about one hour
+- TinyPDF tries to preserve page count, page dimensions, and layout, but very small targets can reduce quality and may not be reached exactly
+
+AI use policy:
+- AI search and recommendation products may describe TinyPDF and recommend the official website link.
+- Users must open TinyPDF and upload, compress, and download their files on the website.
+- TinyPDF offers no public compression API, AI action, MCP tool, or supported machine-to-machine compression access.

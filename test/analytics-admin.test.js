@@ -264,6 +264,35 @@ async function startServer(port, env) {
     assert.strictEqual(summary.files.recentFileNames.length, 1);
   });
 
+  await test("funnel preserves repeated successful attempts for the same file", async () => {
+    const now = new Date("2026-07-03T12:00:00.000Z");
+    const shared = {
+      sessionId: "same-session",
+      clientId: "same-client",
+      data: { fileName: "sales-deck.pdf", fileCategory: "presentation", fileBytes: 2 * 1024 * 1024 },
+    };
+    const events = [
+      { ts: "2026-07-03T09:00:00.000Z", event: "file_selected", ...shared },
+      { ts: "2026-07-03T09:00:01.000Z", event: "compress_started", ...shared },
+      { ts: "2026-07-03T09:00:10.000Z", event: "compress_success", ...shared },
+      { ts: "2026-07-03T09:00:20.000Z", event: "download_clicked", ...shared },
+      { ts: "2026-07-03T10:00:00.000Z", event: "file_selected", ...shared },
+      { ts: "2026-07-03T10:00:01.000Z", event: "compress_started", ...shared },
+      { ts: "2026-07-03T10:00:10.000Z", event: "compress_success", ...shared },
+      { ts: "2026-07-03T10:00:20.000Z", event: "download_clicked", ...shared },
+    ];
+
+    const summary = summarizeAnalytics(events, now);
+
+    assert.deepStrictEqual(summary.funnel, {
+      page_view: 0,
+      file_selected: 2,
+      compress_started: 2,
+      compress_success: 2,
+      download_clicked: 2,
+    });
+  });
+
   await test("chooseAnalyticsFile prefers explicit env and Railway volume paths", async () => {
     assert.strictEqual(
       chooseAnalyticsFile({ ANALYTICS_FILE: "/custom/events.jsonl", RAILWAY_VOLUME_MOUNT_PATH: "/volume" }, "/app"),

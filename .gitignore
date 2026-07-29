@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 .build/
+.worktrees/
 
 # Data files (contains user data and settings)
 data/*.json

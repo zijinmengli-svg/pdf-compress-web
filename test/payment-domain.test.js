@@ -59,6 +59,38 @@ assert.strictEqual(Object.hasOwn(publicPaymentConfig(cfg, {
 }, { ready: true }), "apiKey"), false);
 assert.strictEqual(loadPaymentConfig({ BILLING_ENABLED: "true" }).enabled, false);
 
+// Break caught: malformed configured amounts silently fall back to sale prices.
+for (const [name, invalidValue] of [
+  ["PAYMENT_USD_MINOR", "1.5"],
+  ["PAYMENT_CNY_MINOR", "0"],
+  ["PAYMENT_USD_MINOR", "1e2"],
+]) {
+  const invalidAmountConfig = loadPaymentConfig({ ...env, [name]: invalidValue });
+  assert.strictEqual(invalidAmountConfig.ready, false);
+  assert.strictEqual(invalidAmountConfig.enabled, false);
+  assert.strictEqual(invalidAmountConfig[name === "PAYMENT_USD_MINOR"
+    ? "usdAmountMinor"
+    : "cnyAmountMinor"], undefined);
+  assert.strictEqual(invalidAmountConfig.errors.some((error) => error.startsWith(name)), true);
+}
+
+const defaultAmountConfig = loadPaymentConfig({
+  ...env,
+  PAYMENT_USD_MINOR: " ",
+  PAYMENT_CNY_MINOR: "",
+});
+assert.strictEqual(defaultAmountConfig.ready, true);
+assert.deepStrictEqual(defaultAmountConfig.errors, []);
+assert.strictEqual(defaultAmountConfig.usdAmountMinor, 199);
+assert.strictEqual(defaultAmountConfig.cnyAmountMinor, 990);
+
+// Break caught: checkout is advertised even though payment health is not ready.
+assert.strictEqual(publicPaymentConfig(cfg, {
+  billingEnabled: true,
+  usdAmountMinor: 199,
+  cnyAmountMinor: 990,
+}, { ready: false }).enabled, false);
+
 // Break caught: production starts without the legal operator name required for Terms.
 const productionConfig = loadPaymentConfig({
   ...env,

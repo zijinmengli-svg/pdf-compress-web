@@ -14,6 +14,7 @@ data/*.sqlite-wal
 
 # Environment variables (contains API keys — set these in Railway dashboard)
 .env
+.env.payment.local
 
 # Temp files
 *.tmp

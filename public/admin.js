@@ -361,6 +361,21 @@ function render(summary) {
   renderRecentEvents(summary);
 }
 
+function money(minor, currency) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD" }).format(Number(minor || 0) / 100);
+}
+
+async function loadPayments() {
+  const response = await fetch("/api/admin/payments", { credentials: "same-origin", cache: "no-store" });
+  if (!response.ok) return;
+  const payload = await response.json();
+  const summary = document.getElementById("payment-summary");
+  const rows = document.getElementById("payment-orders");
+  if (!payload.available) { summary.innerHTML = `<div><span>支付状态</span><strong>未配置</strong></div>`; rows.innerHTML = `<tr><td colspan="5">支付服务尚未配置</td></tr>`; return; }
+  summary.innerHTML = [["30 天 Paddle 净收益（USD）", money(payload.summary.netEarningsUsdMinor, "USD")], ...Object.entries(payload.summary.customerTotalsByCurrency || {}).map(([currency, total]) => [`客户支付总额（${currency}）`, money(total, currency)])].map(([label, amount]) => `<div><span>${text(label)}</span><strong>${text(amount)}</strong></div>`).join("");
+  rows.innerHTML = (payload.orders || []).map(order => `<tr><td>${text(formatTime(order.created_at))}</td><td>${text(String(order.id).slice(0, 8))}</td><td>${text(order.payment_status)}</td><td>${text(money(order.price_amount_minor, order.price_currency))}</td><td>${text(order.paddle_transaction_id ? "已由 webhook 计入" : "—")}</td></tr>`).join("") || `<tr><td colspan="5">暂无支付订单</td></tr>`;
+}
+
 async function loadSummary({ manual = false } = {}) {
   if (manual) {
     setRefreshStatus("loading", "数据更新中，请稍候...");
@@ -380,6 +395,7 @@ async function loadSummary({ manual = false } = {}) {
     }
     if (!response.ok) throw new Error("无法加载数据");
     render(await response.json());
+    await loadPayments();
     loginPanel.hidden = true;
     dashboard.hidden = false;
     logoutButton.hidden = false;

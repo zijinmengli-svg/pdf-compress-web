@@ -1016,6 +1016,15 @@ async function handleApiRequest(req, res, url) {
     return;
   }
 
+  if (url.pathname === "/api/admin/payments" && req.method === "GET") {
+    if (!ADMIN_PASSWORD || !hasValidAdminSession(req)) { sendError(res, 401, "UNAUTHORIZED", "Admin login required"); return; }
+    if (!paymentRuntime) { json(res, 200, { available: false, summary: null, orders: [] }); return; }
+    const to = new Date(); const from = new Date(to.getTime() - 30 * 24 * 60 * 60_000);
+    const [summary, orders] = await Promise.all([paymentRuntime.repo.paymentSummary({ from, to }), paymentRuntime.repo.listOrders({ from, to, limit: 50 })]);
+    json(res, 200, { available: true, summary, orders });
+    return;
+  }
+
   if (url.pathname === "/api/admin/export" && req.method === "GET") {
     if (!ADMIN_PASSWORD || !hasValidAdminSession(req)) {
       sendError(res, 401, "UNAUTHORIZED", "Admin login required");

@@ -606,10 +606,17 @@ async function vectorCompressSearch(jobId, job, inputPath, scratchBase, targetBy
     sendEvent(jobId, job.state);
     step++;
     try { await runGsQf(inputPath, scratch, qf, resCap); }
-    catch { try { fs.unlinkSync(scratch); } catch {} return null; }
+    catch (error) {
+      console.error("compression_probe_failed", { jobId, phase: "vector_probe", error: error.message });
+      try { fs.unlinkSync(scratch); } catch {}
+      return null;
+    }
     let st; try { st = await fsp.stat(scratch); } catch { return null; }
     try { fs.unlinkSync(scratch); } catch {}
-    if (st.size < minValidBytes) return null;
+    if (st.size < minValidBytes) {
+      console.error("compression_probe_rejected", { jobId, phase: "vector_probe", outputBytes: st.size, minValidBytes });
+      return null;
+    }
     return st.size;
   };
   return await searchBestConfig(probe, targetBytes, COMPRESS);
@@ -686,8 +693,9 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     if (!pdfInfo.valid)     throw new Error("This is not a valid PDF file");
     if (pdfInfo.encrypted)  throw new Error("Encrypted PDFs are not supported. Please unlock the file and try again.");
 
-    // 最小有效输出：>= 原文件 1% 且 >= 10KB
-    const MIN_VALID_BYTES = Math.max(Math.round(originalBytes * 0.01), 10 * 1024);
+    // 合法 PDF 可能含有大量冗余内容；压缩结果不能按原文件百分比判无效。
+    // 保留固定下限以过滤空文件或明显损坏的 Ghostscript 输出。
+    const MIN_VALID_BYTES = 1024;
 
     job.state.originalBytes = originalBytes;
     job.state.targetBytes   = targetBytes;
@@ -721,7 +729,8 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
             bestValidBytes = resultBytes;
           }
         }
-      } catch {
+      } catch (error) {
+        console.error("compression_vector_failed", { jobId, phase: "vector_output", error: error.message });
         // 搜索/渲染失败 → 交由栅格化兜底
       }
     }
@@ -740,7 +749,8 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
           bestValidBytes = resultBytes;
           job.state.rasterized = true; // 标记已栅格化 → 前端显示清晰度提示
         }
-      } catch {
+      } catch (error) {
+        console.error("compression_raster_failed", { jobId, phase: "raster_output", error: error.message });
         // 栅格化失败 → 保留已有 bestValid，由下方兜底处理
       }
     }
@@ -828,6 +838,7 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     }).catch(() => {});
 
   } catch (error) {
+    console.error("compression_failed", { jobId, error: error.message });
     job.state.status   = "error";
     job.state.progress = 1;
     job.state.message  = "Compression failed";

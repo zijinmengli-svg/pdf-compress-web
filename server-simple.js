@@ -10,6 +10,7 @@ const { URL } = require("url");
 const { COMPRESS, searchBestConfig } = require("./lib/compress-search");
 const { makeCompressedDownloadName } = require("./lib/download-name");
 const { chooseAnalyticsFile } = require("./lib/analytics-path");
+const { createAnalyticsStore } = require("./lib/analytics-store");
 const { loadPaymentConfig, publicPaymentConfig } = require("./lib/payment/config");
 const { createPaymentPool, runPaymentMigrations } = require("./lib/payment/database");
 const { createPaymentRepository } = require("./lib/payment/repository");
@@ -33,8 +34,6 @@ const {
   verifyJobAccess,
 } = require("./lib/web-session");
 const {
-  appendAnalyticsEvent,
-  readAnalyticsEvents,
   summarizeAnalytics,
   classifyFileName,
   normalizeRegion,
@@ -52,6 +51,11 @@ const HOST = process.env.HOST || "0.0.0.0";
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const ANALYTICS_FILE = chooseAnalyticsFile(process.env, ROOT);
+const analyticsStore = createAnalyticsStore({
+  databaseUrl: process.env.DATABASE_URL || "",
+  filePath: ANALYTICS_FILE,
+  explicitFilePath: Boolean(process.env.ANALYTICS_FILE || process.env.RAILWAY_VOLUME_MOUNT_PATH),
+});
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.randomBytes(32).toString("hex");
 const WEB_SESSION_SECRET = process.env.WEB_SESSION_SECRET || ADMIN_SESSION_SECRET;
@@ -304,7 +308,7 @@ function recordAnalytics(req, url, event, data = {}, extra = {}) {
     ...requestMeta(req, url, extra),
     data,
   };
-  appendAnalyticsEvent(ANALYTICS_FILE, payload).catch(() => {});
+  analyticsStore.append(payload).catch(() => {});
 }
 
 function signAdminSession(ts) {
@@ -821,7 +825,7 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
       reached_target: reachedTarget ? 1 : 0,
       rasterized:     job.state.rasterized ? 1 : 0,
     });
-    appendAnalyticsEvent(ANALYTICS_FILE, {
+    analyticsStore.append({
       event: "compress_success",
       ...(job.analyticsMeta || {}),
       data: {
@@ -845,7 +849,7 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     job.state.error    = error.message;
     sendEvent(jobId, job.state);
     sendGaEvent(job.gaClientId, "compress_error", { reason: String(error.message).slice(0, 100) });
-    appendAnalyticsEvent(ANALYTICS_FILE, {
+    analyticsStore.append({
       event: "compress_error",
       ...(job.analyticsMeta || {}),
       data: {
@@ -974,7 +978,7 @@ async function handleApiRequest(req, res, url) {
         sendError(res, 400, "BAD_REQUEST", "Invalid event");
         return;
       }
-      await appendAnalyticsEvent(ANALYTICS_FILE, {
+      await analyticsStore.append({
         event: eventName,
         ...requestMeta(req, url, {
           sessionId: body.sessionId || "",
@@ -1022,7 +1026,7 @@ async function handleApiRequest(req, res, url) {
       sendError(res, 401, "UNAUTHORIZED", "Admin login required");
       return;
     }
-    const events = await readAnalyticsEvents(ANALYTICS_FILE);
+    const events = await analyticsStore.readAll();
     json(res, 200, summarizeAnalytics(events), { "Cache-Control": "no-store" });
     return;
   }
@@ -1066,7 +1070,7 @@ async function handleApiRequest(req, res, url) {
     const range = ["1m", "3m", "5m", "all"].includes(url.searchParams.get("range"))
       ? url.searchParams.get("range")
       : "all";
-    const events = await readAnalyticsEvents(ANALYTICS_FILE);
+    const events = await analyticsStore.readAll();
     const csv = exportAnalyticsCsv(events, range);
     res.writeHead(200, {
       "Content-Type": "text/csv; charset=utf-8",
@@ -1166,7 +1170,7 @@ async function handleApiRequest(req, res, url) {
         target_mb: targetMB,
         ads_enabled: AD_ENABLED_CFG ? 1 : 0
       });
-      appendAnalyticsEvent(ANALYTICS_FILE, {
+      analyticsStore.append({
         event: "file_selected",
         ...analyticsMeta,
         data: {
@@ -1175,7 +1179,7 @@ async function handleApiRequest(req, res, url) {
           fileBytes: uploadBytes,
         },
       }).catch(() => {});
-      appendAnalyticsEvent(ANALYTICS_FILE, {
+      analyticsStore.append({
         event: "compress_started",
         ...analyticsMeta,
         data: {
@@ -1296,7 +1300,7 @@ async function handleApiRequest(req, res, url) {
     }
     const safeName = job.state.downloadName || "compressed.pdf";
     const encodedName = encodeURIComponent(safeName);
-    appendAnalyticsEvent(ANALYTICS_FILE, {
+    analyticsStore.append({
       event: "download_clicked",
       ...(job.analyticsMeta || {}),
       data: {
@@ -1448,6 +1452,11 @@ const server = http.createServer(async (req, res) => {
 });
 
 async function main() {
+  try {
+    await analyticsStore.ready();
+  } catch {
+    console.error("analytics database unavailable; analytics writes are temporarily disabled");
+  }
   try {
     paymentRuntime = await startPaymentRuntime();
     if (paymentRuntime) {

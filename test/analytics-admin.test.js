@@ -324,6 +324,19 @@ async function startServer(port, env) {
     }
   });
 
+  await test("site stays available when the optional analytics database is unavailable", async () => {
+    const srv = await startServer(3823, {
+      DATABASE_URL: "postgresql://127.0.0.1:1/tinypdf",
+      ANALYTICS_FILE: "",
+    });
+    try {
+      const res = await request(3823, "GET", "/api/config");
+      assert.strictEqual(res.status, 200);
+    } finally {
+      srv.kill("SIGKILL");
+    }
+  });
+
   await test("admin session can read summary and export CSV for tracked events", async () => {
     const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "tinypdf-admin-password-"));
     const srv = await startServer(3822, {

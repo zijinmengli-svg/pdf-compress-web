@@ -227,13 +227,13 @@ function renderTrend(summary) {
 
 function renderFunnel(summary) {
   const entries = Object.entries(summary.funnel).map(([step, count]) => ({ step, label: funnelLabel(step), count: Number(count || 0) }));
-  const base = Math.max(entries[0] && entries[0].count || 0, 1);
+  const base = Number(entries[0] && entries[0].count || 0);
   document.getElementById("funnel-list").innerHTML = entries.map(row => {
-    const percent = Math.round((row.count / base) * 1000) / 10;
+    const percent = base > 0 ? Math.round((row.count / base) * 1000) / 10 : 0;
     return `
       <div class="admin-funnel-row">
         <div><span>${text(row.label)}</span><strong>${formatNumber(row.count)}</strong><em>${percent}%</em></div>
-        <i style="width:${Math.max(2, percent)}%"></i>
+        <i style="width:${base > 0 ? Math.max(2, percent) : 0}%"></i>
       </div>
     `;
   }).join("");

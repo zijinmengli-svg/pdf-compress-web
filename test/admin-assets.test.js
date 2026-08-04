@@ -5,11 +5,18 @@ const fs = require("fs");
 const path = require("path");
 
 const html = fs.readFileSync(path.join(__dirname, "..", "public", "admin.html"), "utf8");
+const adminJs = fs.readFileSync(path.join(__dirname, "..", "public", "admin.js"), "utf8");
 
 assert.match(
   html,
   /<link rel="stylesheet" href="\.\/styles\.css"\s*\/>/,
   "admin.html must use a relative stylesheet path so its UI also renders when opened locally"
+);
+
+assert.doesNotMatch(
+  adminJs,
+  /const base = Math\.max\(entries\[0\].*?, 1\);/,
+  "an empty visit base must not turn later funnel events into a percentage above 100%"
 );
 
 assert.match(

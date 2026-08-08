@@ -66,6 +66,7 @@ Create focused referral modules instead of adding all business rules to `server-
 - `createReferralRepository({ pool, now = () => new Date(), timezone = "Asia/Shanghai" })` returns:
   - `getSettings(db)` and `updateSettings({ enabled, dailyRewardCap }, db)`
   - `ensureWallet({ walletHash, legacyIdentityHash, now }, db)`
+  - `ensureWelcomeCredit({ walletId, legacyIdentityHash, now }, db)` — called only when referral rewards are enabled; when disabled, the existing `free_grants` path remains authoritative.
   - `ensureInviteCode({ walletId, codeHash, now }, db)`
   - `lockFirstTouch({ inviteCodeHash, inviteeWalletId, now }, db)`
   - `getWalletStatus({ walletHash, now }, db)`
@@ -83,7 +84,7 @@ Create focused referral modules instead of adding all business rules to `server-
 
 - `referral_daily_counters` must store a Beijing-local calendar date and an atomically incremented `valid_friend_count`; a transaction must lock the date row before comparing and incrementing the cap.
 
-- `migrateLegacyFreeGrants` preserves the existing semantics: a missing `free_grants` row means the welcome grant is still unused and cannot be enumerated, `restored_at IS NOT NULL` means one available welcome grant, and an un-restored row means no available welcome grant. `ensureWallet({ walletHash, legacyIdentityHash })` lazily creates the welcome grant using an idempotent source key derived from the current web-session identity; restored rows are migrated by keyed source and repeated startup cannot create duplicates.
+- `migrateLegacyFreeGrants` preserves the existing semantics: a missing `free_grants` row means the welcome grant is still unused and cannot be enumerated, `restored_at IS NOT NULL` means one available welcome grant, and an un-restored row means no available welcome grant. `ensureWelcomeCredit({ walletId, legacyIdentityHash })` is invoked only while referral rewards are enabled, uses an idempotent source key derived from the current web-session identity, and never changes the disabled-feature payment path.
 
 - [ ] **Step 1: Write failing repository tests**
 
@@ -246,7 +247,7 @@ Use the planned dependency-injectable `createServer({ dataRuntime, paymentRuntim
 
 - [ ] **Step 3: Initialize the shared runtime**
 
-Start the data runtime before payment setup. If no `DATABASE_URL` exists, leave referrals disabled and preserve current file-backed analytics/free compression behavior; do not crash the site. Export `createServer({ dataRuntime, paymentRuntime })` for tests while keeping the existing `main()` startup path unchanged.
+Start the data runtime before payment setup. If no `DATABASE_URL` exists, leave referrals disabled and preserve current file-backed analytics/free compression behavior; do not crash the site. Export `createServer({ dataRuntime, paymentRuntime })` for tests while keeping the existing `main()` startup path unchanged. When referral settings are disabled, keep `free_grants` as the authoritative payment-free path; when enabled, use the ledger for wallet-linked credit consumption.
 
 - [ ] **Step 4: Attach wallet and attribution to page requests**
 

@@ -190,6 +190,83 @@ a {
   text-decoration: underline;
 }
 
+.referral-panel {
+  display: grid;
+  gap: 18px;
+  margin: 0 0 24px;
+  padding: 22px;
+  border: 1px solid rgba(20, 122, 98, 0.26);
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(255, 250, 242, 0.96), rgba(231, 248, 240, 0.92));
+  box-shadow: 0 14px 34px rgba(20, 33, 61, 0.08);
+}
+
+.referral-panel h2 {
+  margin: 4px 0 6px;
+  font-size: clamp(22px, 3vw, 30px);
+  letter-spacing: -0.03em;
+}
+
+.referral-panel p {
+  max-width: 720px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.referral-kicker,
+.referral-balance-label {
+  display: block;
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.referral-balance-row {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.referral-balance-row strong {
+  display: inline-block;
+  margin: 4px 10px 0 0;
+  font-size: 34px;
+  line-height: 1;
+}
+
+.referral-balance-row small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.referral-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.referral-actions button {
+  min-height: 44px;
+}
+
+.referral-actions .secondary-button {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(20, 33, 61, 0.2);
+}
+
+.referral-feedback {
+  min-height: 1.3em;
+  color: var(--success) !important;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .hero {
   max-width: 1060px;
   margin: 0 0 28px;

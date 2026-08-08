@@ -16,6 +16,12 @@ const metrics        = document.getElementById("metrics");
 const submitButton   = document.getElementById("submit-button");
 const downloadRow    = document.getElementById("download-row");
 const downloadButton = document.getElementById("download-button");
+const referralPanel  = document.getElementById("referral-panel");
+const referralBalance = document.getElementById("referral-balance");
+const referralExpiry = document.getElementById("referral-expiry");
+const referralFeedback = document.getElementById("referral-feedback");
+const copyReferralButton = document.getElementById("copy-referral-link");
+const shareReferralButton = document.getElementById("share-referral-link");
 
 const i18n = window.TinyPDFI18n.createTranslator(document.documentElement.lang);
 const t = (key, vars) => i18n.text(key, vars);
@@ -27,6 +33,8 @@ let AD_SLOT       = "";    // AdSense slot ID.
 let MAX_UPLOAD_MB = 100;   // Hard upload limit in MB.
 let WEB_REQUEST_TOKEN = "";
 let PAYMENT_CONFIG = { enabled: false };
+let REFERRAL_CONFIG = { enabled: false };
+let REFERRAL_STATUS = null;
 
 // Submit button state
 function resetSubmitButton() {
@@ -121,6 +129,88 @@ function trackEvent(event, data = {}, options = {}) {
     body: payload,
     keepalive: Boolean(options.keepalive),
   }).catch(() => {});
+}
+
+function setReferralFeedback(message) {
+  if (referralFeedback) referralFeedback.textContent = message || "";
+}
+
+function formatReferralExpiry(value) {
+  if (!value) return t("referralNoExpiry");
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return t("referralNoExpiry");
+  return t("referralExpiry", { date: date.toLocaleDateString(i18n.language === "zh-CN" ? "zh-CN" : "en-US") });
+}
+
+function renderReferralStatus(status) {
+  REFERRAL_STATUS = status || null;
+  if (!referralPanel) return;
+  const enabled = Boolean(status && status.enabled && status.shareUrl);
+  referralPanel.hidden = !enabled;
+  if (!enabled) return;
+  if (referralBalance) referralBalance.textContent = String(Number(status.balance || 0));
+  if (referralExpiry) referralExpiry.textContent = formatReferralExpiry(status.nearestExpiry);
+  if (copyReferralButton) copyReferralButton.textContent = t("referralCopy");
+  if (shareReferralButton) shareReferralButton.textContent = t("referralShare");
+}
+
+async function refreshReferralStatus() {
+  if (!REFERRAL_CONFIG.enabled || !referralPanel) return null;
+  try {
+    const response = await fetch(`/api/referral/status?language=${i18n.language === "zh-CN" ? "zh" : "en"}`, { cache: "no-store" });
+    if (!response.ok) return null;
+    const status = await response.json();
+    renderReferralStatus(status);
+    return status;
+  } catch {
+    return null;
+  }
+}
+
+function trackReferralAction(event) {
+  fetch("/api/referral/track", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ event, language: i18n.language === "zh-CN" ? "zh" : "en" }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+async function copyReferralLink() {
+  const link = REFERRAL_STATUS && REFERRAL_STATUS.shareUrl;
+  if (!link) return;
+  try {
+    await navigator.clipboard.writeText(link);
+  } catch {
+    const input = document.createElement("textarea");
+    input.value = link;
+    input.setAttribute("readonly", "");
+    input.style.position = "fixed";
+    input.style.opacity = "0";
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand("copy");
+    input.remove();
+  }
+  trackReferralAction("referral_link_copied");
+  setReferralFeedback(t("referralCopied"));
+}
+
+async function shareReferralLink() {
+  const link = REFERRAL_STATUS && REFERRAL_STATUS.shareUrl;
+  if (!link) return;
+  trackReferralAction("referral_share_clicked");
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: "TinyPDF", text: t("referralTitle"), url: link });
+      setReferralFeedback(t("referralShared"));
+      return;
+    } catch (error) {
+      if (error && error.name === "AbortError") return;
+    }
+  }
+  await copyReferralLink();
+  setReferralFeedback(t("referralShareUnavailable"));
 }
 
 function formatMB(bytes) {
@@ -246,6 +336,9 @@ async function startDownload() {
   document.body.appendChild(link);
   link.click();
   link.remove();
+  // The server settles the referral only after the download request is authorized.
+  // Refresh after a short delay so the newly granted credit is visible without a reload.
+  window.setTimeout(refreshReferralStatus, 500);
 }
 
 async function openPaddleCheckout(transactionId) {
@@ -428,6 +521,8 @@ targetInput.addEventListener("input", () => {
 });
 
 downloadButton.addEventListener("click", startDownload);
+if (copyReferralButton) copyReferralButton.addEventListener("click", copyReferralLink);
+if (shareReferralButton) shareReferralButton.addEventListener("click", shareReferralLink);
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -472,6 +567,7 @@ async function initConfig() {
       if (typeof cfg.maxUploadMB === "number")  MAX_UPLOAD_MB = cfg.maxUploadMB;
       if (typeof cfg.webRequestToken === "string") WEB_REQUEST_TOKEN = cfg.webRequestToken;
       if (cfg.payment && typeof cfg.payment === "object") PAYMENT_CONFIG = cfg.payment;
+      if (cfg.referral && typeof cfg.referral === "object") REFERRAL_CONFIG = cfg.referral;
     }
   } catch {
     // Keep defaults when the network request fails.
@@ -484,8 +580,11 @@ async function initConfig() {
   if (window.initAdSlot) {
     window.initAdSlot("ad-slot-main", { adsEnabled: ADS_ENABLED, adClient: AD_CLIENT, adSlot: AD_SLOT });
   }
+  await refreshReferralStatus();
 }
 
 submitButton.textContent = t("compressButton");
 downloadButton.textContent = t("downloadButton");
 const configReady = initConfig();
+
+window.addEventListener("focus", () => { refreshReferralStatus(); });

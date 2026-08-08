@@ -55,7 +55,7 @@ async function makeRepository() {
   await runPaymentMigrations(pool, migrationsDir);
   await runPaymentMigrations(pool, migrationsDir);
   const migrationRows = await pool.query("SELECT version FROM payment_schema_migrations");
-  assert.deepStrictEqual(migrationRows.rows.map((row) => row.version), ["001_payment_schema.sql"]);
+  assert.deepStrictEqual(migrationRows.rows.map((row) => row.version), ["001_payment_schema.sql", "002_referral_rewards.sql"]);
   return { pool, repo: createPaymentRepository({ pool }) };
 }
 

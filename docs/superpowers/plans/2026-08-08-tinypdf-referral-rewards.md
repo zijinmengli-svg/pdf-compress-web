@@ -65,7 +65,7 @@ Create focused referral modules instead of adding all business rules to `server-
 
 - `createReferralRepository({ pool, now = () => new Date(), timezone = "Asia/Shanghai" })` returns:
   - `getSettings(db)` and `updateSettings({ enabled, dailyRewardCap }, db)`
-  - `ensureWallet({ walletHash, now }, db)`
+  - `ensureWallet({ walletHash, legacyIdentityHash, now }, db)`
   - `ensureInviteCode({ walletId, codeHash, now }, db)`
   - `lockFirstTouch({ inviteCodeHash, inviteeWalletId, now }, db)`
   - `getWalletStatus({ walletHash, now }, db)`
@@ -83,7 +83,7 @@ Create focused referral modules instead of adding all business rules to `server-
 
 - `referral_daily_counters` must store a Beijing-local calendar date and an atomically incremented `valid_friend_count`; a transaction must lock the date row before comparing and incrementing the cap.
 
-- `migrateLegacyFreeGrants` preserves the existing semantics: a missing `free_grants` row means the welcome grant is still unused and cannot be enumerated, `restored_at IS NOT NULL` means one available welcome grant, and an un-restored row means no available welcome grant. Restored rows are migrated by keyed source and new wallets receive their welcome grant lazily, so repeated startup cannot create duplicates.
+- `migrateLegacyFreeGrants` preserves the existing semantics: a missing `free_grants` row means the welcome grant is still unused and cannot be enumerated, `restored_at IS NOT NULL` means one available welcome grant, and an un-restored row means no available welcome grant. `ensureWallet({ walletHash, legacyIdentityHash })` lazily creates the welcome grant using an idempotent source key derived from the current web-session identity; restored rows are migrated by keyed source and repeated startup cannot create duplicates.
 
 - [ ] **Step 1: Write failing repository tests**
 
@@ -101,7 +101,7 @@ const second = await repo.lockFirstTouch({ inviteCodeHash: "code-other", invitee
 assert.strictEqual(second.inviter_wallet_id, wallet.id);
 ```
 
-Also cover: FIFO consumption, expired grants, duplicate idempotency keys, 20-invite limit, daily cap locking, migration of restored and consumed `free_grants`, lazy welcome creation for new wallets, and repeated migration.
+Also cover: FIFO consumption, expired grants, duplicate idempotency keys, 20-invite limit, daily cap locking, migration of restored and consumed `free_grants`, lazy welcome creation keyed by legacy identity, and repeated migration.
 
 - [ ] **Step 2: Run the focused test to verify it fails**
 

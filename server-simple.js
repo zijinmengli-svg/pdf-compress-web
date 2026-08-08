@@ -1156,6 +1156,43 @@ async function handleApiRequest(req, res, url) {
     return;
   }
 
+  if (url.pathname === "/api/admin/referrals" && req.method === "GET") {
+    if (!ADMIN_PASSWORD || !hasValidAdminSession(req)) { sendError(res, 401, "UNAUTHORIZED", "Admin login required"); return; }
+    if (!referralRuntime) { json(res, 200, { available: false, settings: null, summary: null, events: [] }); return; }
+    try {
+      const to = new Date();
+      const from = new Date(to.getTime() - 30 * 24 * 60 * 60_000);
+      const data = await referralRuntime.service.getAdminData({ from, to, limit: 100 }, referralRuntime.pool);
+      json(res, 200, { available: true, ...data });
+    } catch {
+      sendError(res, 503, "REFERRAL_UNAVAILABLE", "Referral rewards are temporarily unavailable");
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/admin/referrals/settings" && req.method === "POST") {
+    if (!ADMIN_PASSWORD || !hasValidAdminSession(req) || !isSameOriginRequest(req)) { sendError(res, 403, "FORBIDDEN", "Admin authorization required"); return; }
+    if (!referralRuntime) { sendError(res, 503, "REFERRAL_UNAVAILABLE", "Referral rewards are temporarily unavailable"); return; }
+    try {
+      const body = await readJsonBody(req);
+      const dailyRewardCap = Number(body.dailyRewardCap);
+      if (!Number.isSafeInteger(dailyRewardCap) || dailyRewardCap < 0 || dailyRewardCap > 500) {
+        sendError(res, 400, "BAD_CAP", "Daily reward cap must be an integer from 0 to 500");
+        return;
+      }
+      const adminCookie = parseCookies(req)[ADMIN_COOKIE] || "";
+      const settings = await referralRuntime.service.updateAdminSettings({
+        enabled: Boolean(body.enabled),
+        dailyRewardCap,
+        adminSessionHash: hashAnonymousIdentity(adminCookie, ADMIN_SESSION_SECRET),
+      }, referralRuntime.pool);
+      json(res, 200, { ok: true, settings });
+    } catch {
+      sendError(res, 400, "BAD_SETTINGS", "Referral settings could not be saved");
+    }
+    return;
+  }
+
   if (url.pathname === "/api/admin/export" && req.method === "GET") {
     if (!ADMIN_PASSWORD || !hasValidAdminSession(req)) {
       sendError(res, 401, "UNAUTHORIZED", "Admin login required");

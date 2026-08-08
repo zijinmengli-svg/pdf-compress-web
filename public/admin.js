@@ -10,6 +10,7 @@ const refreshButton = document.getElementById("refresh-button");
 const refreshStatus = document.getElementById("refresh-status");
 const dateRangeCopy = document.getElementById("date-range-copy");
 const paymentSettingsForm = document.getElementById("payment-settings-form");
+const referralSettingsForm = document.getElementById("referral-settings-form");
 
 function showError(message) {
   loginError.hidden = !message;
@@ -105,6 +106,10 @@ function eventLabel(value) {
     compress_error: "压缩失败",
     download_clicked: "点击下载",
     session_end: "会话结束",
+    referral_link_opened: "打开邀请链接",
+    referral_share_clicked: "点击分享邀请",
+    referral_link_copied: "复制邀请链接",
+    referral_reward_granted: "邀请奖励发放",
   };
   return labels[value] || value || "-";
 }
@@ -377,12 +382,77 @@ async function loadPayments() {
   rows.innerHTML = (payload.orders || []).map(order => `<tr><td>${text(formatTime(order.created_at))}</td><td>${text(String(order.id).slice(0, 8))}</td><td>${text(order.payment_status)}</td><td>${text(money(order.price_amount_minor, order.price_currency))}</td><td>${text(order.paddle_transaction_id ? "已由 webhook 计入" : "—")}</td></tr>`).join("") || `<tr><td colspan="5">暂无支付订单</td></tr>`;
 }
 
+function referralStatusLabel(value) {
+  const labels = {
+    opened: "已打开",
+    started: "已开始压缩",
+    compressed: "已压缩",
+    downloaded: "已下载",
+    rewarded: "已奖励",
+    blocked: "已阻止",
+    cap_reached: "达到日上限",
+    already_settled: "已结算",
+  };
+  return labels[value] || value || "-";
+}
+
+async function loadReferrals() {
+  const response = await fetch("/api/admin/referrals", { credentials: "same-origin", cache: "no-store" });
+  if (!response.ok) return;
+  const payload = await response.json();
+  const summary = document.getElementById("referral-summary");
+  const rows = document.getElementById("referral-events");
+  if (!payload.available) {
+    summary.innerHTML = `<div><span>邀请奖励状态</span><strong>未配置</strong></div>`;
+    rows.innerHTML = `<tr><td colspan="5">邀请奖励数据库未连接</td></tr>`;
+    return;
+  }
+  const settings = payload.settings || {};
+  const stats = payload.summary || {};
+  document.getElementById("referral-enabled").checked = Boolean(settings.enabled);
+  document.getElementById("referral-daily-cap").value = Number(settings.daily_reward_cap ?? 50);
+  summary.innerHTML = [
+    ["功能状态", settings.enabled ? "已开启" : "已关闭"],
+    ["30 天有效好友", formatNumber(stats.rewarded)],
+    ["今日已用上限", `${formatNumber(stats.dailyUsed)} / ${formatNumber(stats.dailyCap)}`],
+    ["今日剩余名额", formatNumber(stats.dailyRemaining)],
+    ["30 天发放次数", formatNumber(stats.rewardCredits)],
+  ].map(([label, value]) => `<div><span>${text(label)}</span><strong>${text(value)}</strong></div>`).join("");
+  rows.innerHTML = (payload.events || []).map(event => `
+    <tr>
+      <td>${text(formatTime(event.updated_at || event.created_at))}</td>
+      <td>${text(referralStatusLabel(event.status))}</td>
+      <td>${text(event.first_compression_job_id || "-")}</td>
+      <td>${text(event.first_download_at ? formatTime(event.first_download_at) : "-")}</td>
+      <td>${text(event.blocked_reason || "-")}</td>
+    </tr>
+  `).join("") || `<tr><td colspan="5">暂无邀请记录</td></tr>`;
+}
+
 paymentSettingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const response = await fetch("/api/admin/payments/settings", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ usdAmountMinor: Number(document.getElementById("payment-usd-minor").value), cnyAmountMinor: Number(document.getElementById("payment-cny-minor").value), billingEnabled: document.getElementById("payment-billing-enabled").checked }) });
   if (!response.ok) { window.alert("价格同步失败，原有价格未修改。"); return; }
   window.alert("价格已同步；已有订单保持原始价格。");
   await loadPayments();
+});
+
+referralSettingsForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const cap = Number(document.getElementById("referral-daily-cap").value);
+  if (!Number.isSafeInteger(cap) || cap < 0 || cap > 500) {
+    window.alert("每日上限必须是 0 到 500 的整数。");
+    return;
+  }
+  const response = await fetch("/api/admin/referrals/settings", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled: document.getElementById("referral-enabled").checked, dailyRewardCap: cap }),
+  });
+  if (!response.ok) { window.alert("邀请奖励设置保存失败。"); return; }
+  window.alert("邀请奖励设置已保存。");
+  await loadReferrals();
 });
 
 async function loadSummary({ manual = false } = {}) {
@@ -405,6 +475,7 @@ async function loadSummary({ manual = false } = {}) {
     if (!response.ok) throw new Error("无法加载数据");
     render(await response.json());
     await loadPayments();
+    await loadReferrals();
     loginPanel.hidden = true;
     dashboard.hidden = false;
     logoutButton.hidden = false;

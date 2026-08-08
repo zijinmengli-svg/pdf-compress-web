@@ -93,6 +93,29 @@ function successInput(overrides = {}) {
   assert.strictEqual(fake.events.filter((event) => event.eventType === "compression_succeeded").length, 2);
   assert.strictEqual(fake.events.filter((event) => event.eventType === "free_grant_consumed").length, 1);
   assert.strictEqual(fake.events.filter((event) => event.eventType === "payment_required").length, 1);
+
+  const ledgerFake = createFakeRepo();
+  let ledgerCalls = 0;
+  const ledgerService = createOrderService({
+    repo: ledgerFake,
+    identityHashSecret: "identity-secret",
+    creditService: {
+      async consumeForCompression(input) {
+        ledgerCalls++;
+        assert.strictEqual(input.walletHash, "wallet-hash");
+        return ledgerCalls === 1 ? { granted: true, source: "welcome", remaining: 0 } : { granted: false, source: "none", remaining: 0 };
+      },
+    },
+    now: () => fixedNow,
+    transaction: async (_pool, fn) => fn({}),
+  });
+  const ledgerFirst = await ledgerService.registerCompressionSuccess(successInput({ sessionId: "ledger-session", jobId: "ledger-1", walletHash: "wallet-hash" }));
+  assert.strictEqual(ledgerFirst.paymentRequired, false);
+  assert.strictEqual(ledgerFirst.creditSource, "welcome");
+  const ledgerSecond = await ledgerService.registerCompressionSuccess(successInput({ sessionId: "ledger-session", jobId: "ledger-2", walletHash: "wallet-hash" }));
+  assert.strictEqual(ledgerSecond.paymentRequired, true);
+  assert.strictEqual(ledgerCalls, 2);
+  assert.strictEqual(ledgerFake.events.filter((event) => event.eventType === "free_grant_consumed").length, 0);
   console.log("payment order service tests passed");
 })().catch((error) => {
   console.error(error);

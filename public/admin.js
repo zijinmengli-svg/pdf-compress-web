@@ -110,6 +110,9 @@ function eventLabel(value) {
     referral_share_clicked: "点击分享邀请",
     referral_link_copied: "复制邀请链接",
     referral_reward_granted: "邀请奖励发放",
+    referral_already_settled: "邀请重复下载",
+    referral_cap_reached: "邀请达到日上限",
+    referral_blocked: "邀请被阻止",
   };
   return labels[value] || value || "-";
 }

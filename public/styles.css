@@ -1941,7 +1941,8 @@ body.admin-page {
 }
 
 .status-tag.is-processing,
-.status-tag.is-pending {
+.status-tag.is-pending,
+.status-tag.is-timeout {
   background: #efefea;
   color: var(--admin-muted);
 }

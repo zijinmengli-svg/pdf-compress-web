@@ -136,7 +136,7 @@ function deviceLabel(value) {
 }
 
 function statusLabel(value) {
-  const labels = { success: "成功", error: "失败", processing: "处理中", pending: "待处理" };
+  const labels = { success: "成功", error: "失败", processing: "处理中", timeout: "超时/中断", pending: "待处理" };
   return labels[value] || "成功";
 }
 
@@ -330,7 +330,7 @@ function renderRecentFiles(summary) {
       <td>${text(formatBytes(row.fileBytes))}</td>
       <td>${text(formatTargetSize(row))}</td>
       <td><strong>${text(formatBytes(row.resultBytes))}</strong></td>
-      <td><span class="status-tag is-${attr(row.status || "success")}">${text(statusLabel(row.status))}</span></td>
+      <td title="${attr(row.reason || "")}"><span class="status-tag is-${attr(row.status || "success")}">${text(statusLabel(row.status))}</span></td>
     </tr>
   `).join("") : `<tr><td colspan="7">暂无上传文件名</td></tr>`;
 }
@@ -343,6 +343,9 @@ function renderRecentEvents(summary) {
       data.fileName ? `文件：${data.fileName}` : "",
       data.fileCategory ? `分类：${categoryLabel(data.fileCategory)}` : "",
       data.reason ? `原因：${data.reason}` : "",
+      data.code ? `错误码：${data.code}` : "",
+      data.phase ? `阶段：${data.phase}` : "",
+      Number.isFinite(Number(data.elapsedMs)) ? `耗时：${Math.round(Number(data.elapsedMs) / 1000)} 秒` : "",
     ].filter(Boolean).join(" | ");
     return `
       <tr>

@@ -5,9 +5,10 @@ const fsp = fs.promises;
 const path = require("path");
 const os = require("os");
 const crypto = require("crypto");
-const { spawn, execFileSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const { URL } = require("url");
 const { COMPRESS, searchBestConfig } = require("./lib/compress-search");
+const { runCommand } = require("./lib/process-runner");
 const { makeCompressedDownloadName } = require("./lib/download-name");
 const { chooseAnalyticsFile } = require("./lib/analytics-path");
 const { createAnalyticsStore } = require("./lib/analytics-store");
@@ -126,6 +127,18 @@ const AD_ENABLED_CFG       = process.env.AD_ENABLED === "true";
 const AD_CLIENT_CFG        = process.env.AD_CLIENT || ""; // AdSense 发布商 ID (ca-pub-…)，过审后在 Railway 填
 const AD_SLOT_CFG          = process.env.AD_SLOT || "";   // AdSense 广告单元 ID
 const MAX_INFLIGHT_UPLOADS = Math.max(1, Number(process.env.MAX_INFLIGHT_UPLOADS) || 2);
+
+// Ghostscript is an external process. A malformed or unusual PDF must never
+// leave the HTTP job in processing forever if Ghostscript stops responding.
+const GS_TIMEOUT_MS = Math.max(5_000, Number(process.env.GS_TIMEOUT_MS) || 45_000);
+const COMPRESSION_TIMEOUT_MS = Math.max(
+  GS_TIMEOUT_MS,
+  Number(process.env.COMPRESSION_TIMEOUT_MS) || 180_000
+);
+
+function isProcessTerminationError(error) {
+  return error && ["ETIMEDOUT", "ABORT_ERR"].includes(error.code);
+}
 
 // ── 服务端 GA4 Measurement Protocol ─────────────────────────────────────────
 // 从 Railway（欧洲，不被墙）直连上报，绕开客户端 gtag / Cloudflare proxy / 中国网络的
@@ -521,19 +534,17 @@ function buildPdfFromJpegs(jpegBufs, dpi) {
 }
 
 // 用 Ghostscript 把 PDF 每页渲染成 JPEG → 重组为 PDF，返回 PDF Buffer
-async function rasterizeToJpegPdf(inputPath, dpi, quality) {
+async function rasterizeToJpegPdf(inputPath, dpi, quality, signal) {
   const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), "tinypdf-raster-"));
   try {
     const pattern = path.join(tmpDir, "p-%04d.jpg");
-    await new Promise((resolve, reject) => {
-      const proc = spawn("gs", [
-        "-sDEVICE=jpeg", `-r${dpi}`, `-dJPEGQ=${quality}`,
-        "-dNOPAUSE", "-dBATCH", "-dQUIET", `-sOutputFile=${pattern}`, inputPath,
-      ]);
-      const err = [];
-      proc.stderr.on("data", (d) => err.push(d));
-      proc.on("close", (c) => c === 0 ? resolve() : reject(new Error(`gs jpeg exited ${c}: ${Buffer.concat(err).toString().slice(0, 200)}`)));
-    });
+    const result = await runCommand("gs", [
+      "-sDEVICE=jpeg", `-r${dpi}`, `-dJPEGQ=${quality}`,
+      "-dNOPAUSE", "-dBATCH", "-dQUIET", `-sOutputFile=${pattern}`, inputPath,
+    ], { timeoutMs: GS_TIMEOUT_MS, signal });
+    if (result.code !== 0) {
+      throw new Error(`gs jpeg exited ${result.code}: ${result.stderr.toString().slice(0, 200)}`);
+    }
     const files = (await fsp.readdir(tmpDir)).filter(f => /^p-\d+\.jpg$/.test(f)).sort();
     if (files.length === 0) throw new Error("rasterize produced no pages");
     const bufs = [];
@@ -547,7 +558,7 @@ async function rasterizeToJpegPdf(inputPath, dpi, quality) {
 // 探测 + 对数-对数 DPI 搜索 + 质量阶梯 + 绝对地板。
 // 自高到低搜索，第一个 <= 目标的结果即返回（达标前提下画质最好）。
 // 若目标物理上不可达，返回能产出的最小结果（尽力而为，绝不返回原文件）。
-async function forceRasterToTarget(jobId, job, inputPath, targetBytes) {
+async function forceRasterToTarget(jobId, job, inputPath, targetBytes, signal) {
   const PROBE_DPI = 72, PROBE_Q = 45, DPI_FLOOR = 8;
   const pts = [];          // {dpi, bytes} 用于对数-对数拟合
   let smallest = null;     // 目标不可达时的兜底（最小结果）
@@ -560,9 +571,11 @@ async function forceRasterToTarget(jobId, job, inputPath, targetBytes) {
   };
   const tryPass = async (d, qq) => {
     try {
-      const p = await rasterizeToJpegPdf(inputPath, d, qq);
+      const p = await rasterizeToJpegPdf(inputPath, d, qq, signal);
       if (p && p.length >= 64) { if (!smallest || p.length < smallest.length) smallest = p; return p; }
-    } catch {}
+    } catch (error) {
+      if (isProcessTerminationError(error)) throw error;
+    }
     return null;
   };
 
@@ -614,8 +627,7 @@ async function forceRasterToTarget(jobId, job, inputPath, targetBytes) {
 // 矢量保真的连续质量旋钮：pdfwrite + 关闭 JPEG 直通 + 强制 DCT 重编码 + 自定义 QFactor。
 // QFactor 越小画质越高、体积越大（与体积近似幂律关系），可平滑命中任意目标体积，
 // 且文字/矢量保持清晰（不栅格化）。resCap 限制图像分辨率上限（默认 300，超过才下采样）。
-async function runGsQf(inputPath, outputPath, qf, resCap) {
-  return new Promise((resolve, reject) => {
+async function runGsQf(inputPath, outputPath, qf, resCap, signal) {
     const ps =
       `<< /ColorImageDict << /QFactor ${qf} /Blend 1 /HSamples [2 1 1 2] /VSamples [2 1 1 2] >> ` +
       `/GrayImageDict << /QFactor ${qf} /Blend 1 /HSamples [2 1 1 2] /VSamples [2 1 1 2] >> >> setdistillerparams`;
@@ -637,20 +649,16 @@ async function runGsQf(inputPath, outputPath, qf, resCap) {
       `-sOutputFile=${outputPath}`,
       "-c", ps, "-f", inputPath,
     ];
-    const proc = spawn("gs", args);
-    const errChunks = [];
-    proc.stderr.on("data", (d) => errChunks.push(d));
-    proc.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`gs qf exited ${code}: ${Buffer.concat(errChunks).toString("utf8").slice(0, 200)}`));
-    });
-  });
+    const result = await runCommand("gs", args, { timeoutMs: GS_TIMEOUT_MS, signal });
+    if (result.code !== 0) {
+      throw new Error(`gs qf exited ${result.code}: ${result.stderr.toString("utf8").slice(0, 200)}`);
+    }
 }
 
 // 分辨率优先的矢量压缩搜索：构造真实 Ghostscript probe，交由纯函数 searchBestConfig 选最优
 // (分辨率,质量) 配置。probe 即用即删探测临时文件，返回字节数或 null。
 // 返回 { qf, resCap, bytes }(≤target) 或 null（交由栅格化兜底）。不落地最终文件，由调用方按配置渲染。
-async function vectorCompressSearch(jobId, job, inputPath, scratchBase, targetBytes, minValidBytes) {
+async function vectorCompressSearch(jobId, job, inputPath, scratchBase, targetBytes, minValidBytes, signal) {
   let step = 0;
   const scratch = `${scratchBase}.probe.tmp`;
   const probe = async (qf, resCap) => {
@@ -658,10 +666,11 @@ async function vectorCompressSearch(jobId, job, inputPath, scratchBase, targetBy
     job.state.message  = "Searching for the clearest version that fits the target size...";
     sendEvent(jobId, job.state);
     step++;
-    try { await runGsQf(inputPath, scratch, qf, resCap); }
+    try { await runGsQf(inputPath, scratch, qf, resCap, signal); }
     catch (error) {
       console.error("compression_probe_failed", { jobId, phase: "vector_probe", error: error.message });
       try { fs.unlinkSync(scratch); } catch {}
+      if (isProcessTerminationError(error)) throw error;
       return null;
     }
     let st; try { st = await fsp.stat(scratch); } catch { return null; }
@@ -731,6 +740,15 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
   const job = jobs.get(jobId);
   if (!job) return;
 
+  const controller = new AbortController();
+  const startedAt = Date.now();
+  job.abortController = controller;
+  const timeoutTimer = setTimeout(() => {
+    if (job.state.status === "processing") {
+      controller.abort(new Error(`Compression timed out after ${COMPRESSION_TIMEOUT_MS}ms`));
+    }
+  }, COMPRESSION_TIMEOUT_MS);
+
   const outputPath = job.outputPath;
   const downloadName = makeCompressedDownloadName(originalName);
   const targetMB = Number((targetBytes / 1048576).toFixed(2));
@@ -770,10 +788,11 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
 
     // ── 主压缩：分辨率优先搜索（保住原生分辨率，质量为辅；目标内最清晰，矢量不栅格化）──
     if (resultBytes === null) {
+      job.state.phase = "vector_search";
       try {
-        const cfg = await vectorCompressSearch(jobId, job, inputPath, outputPath, targetBytes, MIN_VALID_BYTES);
+        const cfg = await vectorCompressSearch(jobId, job, inputPath, outputPath, targetBytes, MIN_VALID_BYTES, controller.signal);
         if (cfg) {
-          await runGsQf(inputPath, outputPath, cfg.qf, cfg.resCap); // 用选定配置渲染最终输出
+          await runGsQf(inputPath, outputPath, cfg.qf, cfg.resCap, controller.signal); // 用选定配置渲染最终输出
           const st = await fsp.stat(outputPath);
           if (st.size <= targetBytes && st.size >= MIN_VALID_BYTES) {
             resultBytes    = st.size;
@@ -792,8 +811,9 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     // 每页渲染成 JPEG 再无依赖重组为 PDF。矢量文字会变成像素图（可能模糊），但保证达标。
     // 仅在 QFactor 搜索未达标时触发。
     if (resultBytes === null || resultBytes > targetBytes) {
+      job.state.phase = "raster_fallback";
       try {
-        const rasterPdf = await forceRasterToTarget(jobId, job, inputPath, targetBytes);
+        const rasterPdf = await forceRasterToTarget(jobId, job, inputPath, targetBytes, controller.signal);
         if (rasterPdf && rasterPdf.length >= MIN_VALID_BYTES) {
           await fsp.writeFile(outputPath, rasterPdf);
           resultBytes    = rasterPdf.length;
@@ -899,26 +919,37 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
         ratio: Number((ratio || 0).toFixed(3)),
         reachedTarget,
         rasterized: Boolean(job.state.rasterized),
+        jobId,
       },
     }).catch(() => {});
 
   } catch (error) {
-    console.error("compression_failed", { jobId, error: error.message });
+    const timedOut = error && ["ETIMEDOUT", "ABORT_ERR"].includes(error.code);
+    const reason = String(error && error.message || "Compression failed");
+    console.error("compression_failed", { jobId, error: reason, code: timedOut ? "COMPRESSION_TIMEOUT" : "COMPRESSION_ERROR" });
     job.state.status   = "error";
     job.state.progress = 1;
     job.state.message  = "Compression failed";
-    job.state.error    = error.message;
+    job.state.error    = reason;
+    job.state.errorCode = timedOut ? "COMPRESSION_TIMEOUT" : "COMPRESSION_ERROR";
     sendEvent(jobId, job.state);
-    sendGaEvent(job.gaClientId, "compress_error", { reason: String(error.message).slice(0, 100) });
+    sendGaEvent(job.gaClientId, "compress_error", { reason: reason.slice(0, 100), code: job.state.errorCode });
     analyticsStore.append({
       event: "compress_error",
       ...(job.analyticsMeta || {}),
       data: {
         fileName: job.originalName,
         fileCategory: classifyFileName(job.originalName),
-        reason: String(error.message).slice(0, 160),
+        reason: reason.slice(0, 160),
+        code: job.state.errorCode,
+        phase: job.state.phase || "unknown",
+        jobId,
+        elapsedMs: Date.now() - startedAt,
       },
     }).catch(() => {});
+  } finally {
+    clearTimeout(timeoutTimer);
+    if (job.abortController === controller) delete job.abortController;
   }
 }
 
@@ -1309,6 +1340,7 @@ async function handleApiRequest(req, res, url) {
           fileName: pdfPart.filename,
           fileCategory: classifyFileName(pdfPart.filename),
           fileBytes: uploadBytes,
+          jobId,
         },
       }).catch(() => {});
       analyticsStore.append({
@@ -1320,6 +1352,7 @@ async function handleApiRequest(req, res, url) {
           fileBytes: uploadBytes,
           targetMB,
           targetBytes: parseSizeToBytes(targetMB),
+          jobId,
         },
       }).catch(() => {});
 
@@ -1343,7 +1376,8 @@ async function handleApiRequest(req, res, url) {
           targetMB,
           targetBytes: parseSizeToBytes(targetMB),
           resultBytes: null,
-          ratio: null
+          ratio: null,
+          phase: "queued"
         }
       };
 
@@ -1468,6 +1502,7 @@ async function handleApiRequest(req, res, url) {
         targetMB: job.targetMB || "",
         targetBytes: job.state.targetBytes || job.targetBytes || "",
         resultBytes: job.state.resultBytes || stat.size,
+        jobId,
       },
     }).catch(() => {});
     res.writeHead(200, {

@@ -7,6 +7,7 @@ const os = require("os");
 const path = require("path");
 const { spawn } = require("child_process");
 const { readAnalyticsEvents, sourceFor, sourceCategoryFor } = require("../lib/analytics");
+const { createWebSession } = require("../lib/web-session");
 
 const SRV_DIR = path.join(__dirname, "..");
 const PORT = 3922;
@@ -161,6 +162,20 @@ async function startServer(analyticsFile) {
       ownedRequestToken = payload.webRequestToken;
       assert.ok(ownedRequestToken, "config should return a request token");
       assert.match(config.headers["x-robots-tag"] || "", /noarchive/);
+    });
+
+    await check("expired website sessions are renewed by a same-origin config refresh", async () => {
+      const expired = createWebSession(
+        "integration-web-session-secret",
+        { referrer: "https://example.com/old", utm: {} },
+        new Date(Date.now() - (2 * 60 * 60 * 1000 + 60 * 1000))
+      );
+      const response = await request("GET", "/api/config", null, sameOriginHeaders(`tinypdf_web_session=${encodeURIComponent(expired.value)}`));
+      const payload = JSON.parse(response.body);
+      const renewedCookie = cookieValue(response, "tinypdf_web_session");
+      assert.ok(renewedCookie, "config refresh should issue a replacement website session cookie");
+      assert.ok(payload.webRequestToken, "config refresh should return a request token");
+      assert.notStrictEqual(renewedCookie, `tinypdf_web_session=${encodeURIComponent(expired.value)}`);
     });
 
     await check("valid website session reaches existing upload validation", async () => {

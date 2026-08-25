@@ -990,7 +990,23 @@ async function handleMultipart(req, boundary, maxSize) {
 
 async function handleApiRequest(req, res, url) {
   if (url.pathname === "/api/config" && req.method === "GET") {
-    const session = webSessionContext(req);
+    let session = webSessionContext(req);
+    let sessionCookie = "";
+    // A page can stay open longer than the two-hour website-session lifetime.
+    // Renew only for a same-origin browser fetch so an expired token can recover
+    // without making the user re-select the PDF or exposing a token to crawlers.
+    if (
+      !session.claims &&
+      !isAutomatedUserAgent(req.headers["user-agent"]) &&
+      isSameOriginRequest(req)
+    ) {
+      const renewed = createWebSession(WEB_SESSION_SECRET, {
+        referrer: req.headers.referer || req.headers.referrer || "",
+        utm: requestUtm(req),
+      });
+      session = renewed;
+      sessionCookie = makeWebSessionCookie(req, renewed.value);
+    }
     const referralSettings = referralRuntime ? await referralRuntime.repo.getSettings().catch(() => null) : null;
     json(res, 200, {
       largeFileMB: LARGE_FILE_MB,
@@ -1014,7 +1030,7 @@ async function handleApiRequest(req, res, url) {
       webRequestToken: session.claims && !isAutomatedUserAgent(req.headers["user-agent"])
         ? requestTokenFor(session.value, WEB_SESSION_SECRET)
         : "",
-    });
+    }, sessionCookie ? { "Set-Cookie": sessionCookie } : {});
     return;
   }
 

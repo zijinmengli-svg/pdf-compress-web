@@ -28,10 +28,11 @@ assert.strictEqual(
 assert.strictEqual(zh.text("unknownKey"), "unknownKey");
 
 const appSource = fs.readFileSync(path.join(__dirname, "..", "public", "app-simple.js"), "utf8");
+const requestSource = fs.readFileSync(path.join(__dirname, "..", "public", "web-request.js"), "utf8");
 assert.match(appSource, /TinyPDFI18n\.createTranslator\(document\.documentElement\.lang\)/);
 assert.match(appSource, /landingLanguage:\s*i18n\.language/);
 assert.match(appSource, /trackEvent\("target_entered"/);
-assert.match(appSource, /X-TinyPDF-Web-Token/);
+assert.match(requestSource, /X-TinyPDF-Web-Token/);
 assert.match(appSource, /webRequestToken/);
 assert.match(appSource, /accessToken/);
 assert.match(appSource, /events\?access=/);

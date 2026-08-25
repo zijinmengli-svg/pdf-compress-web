@@ -26,6 +26,7 @@ let AD_CLIENT     = "";    // AdSense publisher ID.
 let AD_SLOT       = "";    // AdSense slot ID.
 let MAX_UPLOAD_MB = 100;   // Hard upload limit in MB.
 let WEB_REQUEST_TOKEN = "";
+const webRequest = window.TinyPDFWebRequest;
 
 // Submit button state
 function resetSubmitButton() {
@@ -228,16 +229,15 @@ async function startDownload() {
 }
 
 async function submitCompression(body) {
-  const response = await fetch("/api/jobs", {
-    method: "POST",
-    headers: {
+  const { response, payload } = await webRequest.postCompressionWithSession({
+    body,
+    getToken: () => WEB_REQUEST_TOKEN,
+    refreshToken: refreshWebRequestToken,
+    extraHeaders: {
       "X-TinyPDF-Session-Id": getSessionId(),
       "X-TinyPDF-Client-Id": getClientId(),
-      "X-TinyPDF-Web-Token": WEB_REQUEST_TOKEN,
     },
-    body
   });
-  const payload  = await response.json();
   if (!response.ok) {
     throw new Error(
       payload.code === "WEBSITE_SESSION_REQUIRED" || payload.code === "JOB_ACCESS_DENIED"
@@ -407,6 +407,22 @@ trackEvent("landing_view", {
   pageTitle: document.title,
   landingLanguage: i18n.language,
 });
+
+// Renew the short-lived website token without reloading the page or losing the
+// PDF already selected by the user. The server renews the signed session cookie
+// only for this same-origin browser request.
+async function refreshWebRequestToken() {
+  try {
+    const res = await fetch("/api/config", { cache: "no-store" });
+    if (!res.ok) return "";
+    const cfg = await res.json();
+    if (typeof cfg.webRequestToken === "string") {
+      WEB_REQUEST_TOKEN = cfg.webRequestToken;
+      return WEB_REQUEST_TOKEN;
+    }
+  } catch {}
+  return "";
+}
 
 // Initialization: load runtime configuration from the server.
 async function initConfig() {

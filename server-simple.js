@@ -644,8 +644,9 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     if (!pdfInfo.valid)     throw new Error("This is not a valid PDF file");
     if (pdfInfo.encrypted)  throw new Error("Encrypted PDFs are not supported. Please unlock the file and try again.");
 
-    // 最小有效输出：>= 原文件 1% 且 >= 10KB
-    const MIN_VALID_BYTES = Math.max(Math.round(originalBytes * 0.01), 10 * 1024);
+    // 输出是否有效不能由“相对原文件大小”判断：有些 PDF 含大量冗余数据，
+    // 合法压缩结果可能远小于原文件的 1%。保留一个固定的损坏文件防线即可。
+    const MIN_VALID_BYTES = 1024;
 
     job.state.originalBytes = originalBytes;
     job.state.targetBytes   = targetBytes;
@@ -817,7 +818,24 @@ async function handleMultipart(req, boundary, maxSize) {
 
 async function handleApiRequest(req, res, url) {
   if (url.pathname === "/api/config" && req.method === "GET") {
-    const session = webSessionContext(req);
+    let session = webSessionContext(req);
+    let sessionCookie = "";
+    // A page can stay open longer than the two-hour website-session lifetime.
+    // Renew the session only for a same-origin browser fetch so an expired token
+    // can recover without making the user re-select the PDF or exposing a token
+    // to crawlers/cross-site callers.
+    if (
+      !session.claims &&
+      !isAutomatedUserAgent(req.headers["user-agent"]) &&
+      isSameOriginRequest(req)
+    ) {
+      const renewed = createWebSession(WEB_SESSION_SECRET, {
+        referrer: req.headers.referer || req.headers.referrer || "",
+        utm: requestUtm(req),
+      });
+      session = renewed;
+      sessionCookie = makeWebSessionCookie(req, renewed.value);
+    }
     json(res, 200, {
       largeFileMB: LARGE_FILE_MB,
       adsEnabled:  AD_ENABLED_CFG,
@@ -828,7 +846,7 @@ async function handleApiRequest(req, res, url) {
       webRequestToken: session.claims && !isAutomatedUserAgent(req.headers["user-agent"])
         ? requestTokenFor(session.value, WEB_SESSION_SECRET)
         : "",
-    });
+    }, sessionCookie ? { "Set-Cookie": sessionCookie } : {});
     return;
   }
 

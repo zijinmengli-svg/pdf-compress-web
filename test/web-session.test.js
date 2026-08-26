@@ -42,8 +42,8 @@ check("exact libindesign referrals are owned while direct and lookalike hosts ar
       referrer: "https://www.libindesign.cn/projects/tinypdf",
     }
   );
-  assert.strictEqual(subdomain.source, "work.libindesign.cn");
-  assert.strictEqual(subdomain.sourceCategory, "referral");
+  assert.strictEqual(subdomain.source, "libindesign.cn");
+  assert.strictEqual(subdomain.sourceCategory, "owned_referral");
   assert.strictEqual(direct.source, "Direct");
   assert.strictEqual(direct.sourceCategory, "direct");
   assert.strictEqual(invalid.source, "Direct");

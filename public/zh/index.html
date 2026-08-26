@@ -53,26 +53,6 @@
       <section class="panel">
         <div class="config-row" id="config-bar"></div>
 
-        <section class="referral-panel" id="referral-panel" hidden aria-labelledby="referral-title">
-          <div>
-            <span class="referral-kicker">免费压缩次数</span>
-            <h2 id="referral-title">分享 TinyPDF 给好友</h2>
-            <p>好友首次压缩成功并下载结果后，你和好友各获得 1 次免费压缩。</p>
-          </div>
-          <div class="referral-balance-row">
-            <div>
-              <span class="referral-balance-label">当前可用次数</span>
-              <strong id="referral-balance">0</strong>
-              <small id="referral-expiry"></small>
-            </div>
-            <div class="referral-actions">
-              <button id="copy-referral-link" type="button" class="secondary-button">复制邀请链接</button>
-              <button id="share-referral-link" type="button">分享邀请链接</button>
-            </div>
-          </div>
-          <p id="referral-feedback" class="referral-feedback" role="status" aria-live="polite"></p>
-        </section>
-
         <form id="compress-form" class="form" novalidate>
           <label class="dropzone" id="dropzone" for="pdf">
             <input id="pdf" name="pdf" type="file" accept="application/pdf" required />

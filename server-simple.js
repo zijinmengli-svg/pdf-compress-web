@@ -23,12 +23,6 @@ const { createCheckoutService } = require("./lib/payment/checkout-service");
 const { createWebhookService } = require("./lib/payment/webhook-service");
 const { createWebhookWorker } = require("./lib/payment/webhook-worker");
 const { createCleanupService } = require("./lib/payment/cleanup-service");
-const { hashAnonymousIdentity } = require("./lib/payment/security");
-const { createReferralRepository } = require("./lib/referral/repository");
-const { createCreditService } = require("./lib/referral/credit-service");
-const { createReferralService } = require("./lib/referral/service");
-const { loadReferralConfig } = require("./lib/referral/config");
-const { createWalletCookie, verifyWalletCookie, hashWalletId } = require("./lib/referral/wallet");
 const {
   WEB_SESSION_MAX_AGE_MS,
   createWebSession,
@@ -68,11 +62,9 @@ const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.randomBy
 const WEB_SESSION_SECRET = process.env.WEB_SESSION_SECRET || ADMIN_SESSION_SECRET;
 const ADMIN_COOKIE = "tinypdf_admin";
 const WEB_SESSION_COOKIE = "tinypdf_web_session";
-const REFERRAL_WALLET_COOKIE = "tinypdf_reward_wallet";
 const ADMIN_SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const paymentConfig = loadPaymentConfig(process.env);
 let paymentRuntime = null;
-let referralRuntime = null;
 
 async function readRawBody(req, maxBytes = 256 * 1024) {
   const chunks = []; let size = 0;
@@ -84,28 +76,16 @@ async function readRawBody(req, maxBytes = 256 * 1024) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-async function startDataRuntime() {
-  const databaseUrl = String(process.env.DATABASE_URL || paymentConfig.databaseUrl || "").trim();
-  const referralConfig = loadReferralConfig(process.env);
-  if (!databaseUrl || !referralConfig.walletSecret) return null;
-  const pool = createPaymentPool(databaseUrl);
-  await runPaymentMigrations(pool, path.join(ROOT, "db/migrations"));
-  const repo = createReferralRepository({ pool });
-  const creditService = createCreditService({ repo, pool });
-  const service = createReferralService({ repo, creditService, secret: referralConfig.walletSecret, origin: process.env.PUBLIC_SITE_ORIGIN || "https://tinypdf.cn" });
-  return { pool, repo, credits: creditService, service, config: referralConfig };
-}
-
-async function startPaymentRuntime(dataRuntime = null) {
+async function startPaymentRuntime() {
   if (!paymentConfig.ready) return null;
-  const pool = dataRuntime ? dataRuntime.pool : createPaymentPool(paymentConfig.databaseUrl);
-  if (!dataRuntime) await runPaymentMigrations(pool, path.join(ROOT, "db/migrations"));
+  const pool = createPaymentPool(paymentConfig.databaseUrl);
+  await runPaymentMigrations(pool, path.join(ROOT, "db/migrations"));
   const repo = createPaymentRepository({ pool });
   let settings = await repo.getSettings();
   if (!settings) settings = await repo.updateSettingsAfterPaddleSync({ environment: paymentConfig.environment, billingEnabled: false, paddleProductId: paymentConfig.productId, paddlePriceId: paymentConfig.priceId, usdAmountMinor: paymentConfig.usdAmountMinor, cnyAmountMinor: paymentConfig.cnyAmountMinor });
   const paddle = createPaddleAdapter(paymentConfig);
   const r2 = createR2Store(paymentConfig);
-  const orders = createOrderService({ repo, pool, identityHashSecret: paymentConfig.identityHashSecret, creditService: dataRuntime && dataRuntime.credits });
+  const orders = createOrderService({ repo, pool, identityHashSecret: paymentConfig.identityHashSecret });
   const worker = createWebhookWorker({ repo, pool, paddle, r2 });
   const cleanup = createCleanupService({ repo, pool, r2, paddle, webhookWorker: worker });
   const runtime = { pool, repo, paddle, r2, orders, worker, cleanup, webhook: createWebhookService({ repo, pool, paddle }), limiter: createSlidingWindowLimiter({ limit: 3, windowMs: 10 * 60_000, secret: paymentConfig.identityHashSecret }), health: { ready: true }, settings };
@@ -249,28 +229,6 @@ function makeWebSessionCookie(req, value) {
   return `${WEB_SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; Max-Age=${Math.floor(WEB_SESSION_MAX_AGE_MS / 1000)}; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
 }
 
-function makeReferralWalletCookie(req, value, maxAgeDays = 365) {
-  const host = req.headers.host || "";
-  const secure = /(^|\.)tinypdf\.cn(?::\d+)?$/i.test(host) || req.headers["x-forwarded-proto"] === "https";
-  return `${REFERRAL_WALLET_COOKIE}=${encodeURIComponent(value)}; Path=/; Max-Age=${Math.floor(Number(maxAgeDays) * 24 * 60 * 60)}; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
-}
-
-async function referralWalletContext(req, res, session) {
-  if (!referralRuntime || !session || !session.claims || isAutomatedUserAgent(req.headers["user-agent"])) return null;
-  const secret = referralRuntime.config.walletSecret;
-  const cookies = parseCookies(req);
-  let wallet = verifyWalletCookie({ value: cookies[REFERRAL_WALLET_COOKIE], secret });
-  if (!wallet) {
-    wallet = { walletId: crypto.randomUUID() };
-    const cookieValue = createWalletCookie({ walletId: wallet.walletId, secret, maxAgeDays: referralRuntime.config.walletCookieDays });
-    appendSetCookie(res, makeReferralWalletCookie(req, cookieValue, referralRuntime.config.walletCookieDays));
-  }
-  const walletHash = hashWalletId(wallet.walletId, secret);
-  const legacyIdentityHash = hashAnonymousIdentity(session.claims.sid, secret);
-  const row = await referralRuntime.repo.ensureWallet({ walletHash, legacyIdentityHash });
-  return { walletId: wallet.walletId, walletHash, legacyIdentityHash, row };
-}
-
 function webSessionContext(req) {
   const value = parseCookies(req)[WEB_SESSION_COOKIE] || "";
   return {
@@ -298,13 +256,6 @@ function rejectWebsiteSession(res) {
     "WEBSITE_SESSION_REQUIRED",
     "Open or refresh TinyPDF in your browser and try again."
   );
-}
-
-async function validReferralRequest(req, res, requireRequestToken = false) {
-  const session = validWebsiteRequest(req, requireRequestToken);
-  if (!session || !referralRuntime) return null;
-  const wallet = await referralWalletContext(req, res, session);
-  return wallet ? { session, wallet } : null;
 }
 
 function visitorCountry(req) {
@@ -854,8 +805,6 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
         const output = await fsp.readFile(outputPath);
         const registered = await paymentRuntime.orders.registerCompressionSuccess({
           sessionId: job.ownerSessionId,
-          walletHash: job.walletHash,
-          legacyIdentityHash: job.legacyIdentityHash,
           jobId,
           originalBytes,
           targetBytes,
@@ -869,20 +818,10 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
         job.paymentCapability = registered.capabilityToken;
         job.paymentRequired = registered.paymentRequired;
         job.paymentChecksum = crypto.createHash("sha256").update(output).digest("hex");
-        job.freeCreditConsumed = !registered.paymentRequired;
-        job.referralCreditSource = registered.creditSource || "legacy_free_grant";
         job.state.payment = { orderId: registered.orderId, capabilityToken: registered.capabilityToken, required: registered.paymentRequired, expiresAt: registered.expiresAt, price: registered.price };
       } catch (error) {
         paymentRuntime.health.ready = false;
         console.error("payment order registration failed");
-      }
-    } else if (referralRuntime && job.walletHash) {
-      try {
-        const credit = await referralRuntime.credits.consumeForCompression({ walletHash: job.walletHash, legacyIdentityHash: job.legacyIdentityHash, jobId });
-        job.freeCreditConsumed = Boolean(credit.granted);
-        job.referralCreditSource = credit.source || "none";
-      } catch (error) {
-        console.error("referral credit consumption failed", { jobId, error: error.message });
       }
     }
     job.state.progress     = 1;
@@ -1007,7 +946,6 @@ async function handleApiRequest(req, res, url) {
       session = renewed;
       sessionCookie = makeWebSessionCookie(req, renewed.value);
     }
-    const referralSettings = referralRuntime ? await referralRuntime.repo.getSettings().catch(() => null) : null;
     json(res, 200, {
       largeFileMB: LARGE_FILE_MB,
       adsEnabled:  AD_ENABLED_CFG,
@@ -1022,42 +960,10 @@ async function handleApiRequest(req, res, url) {
           cnyAmountMinor: Number(paymentRuntime.settings.cny_amount_minor),
         }, paymentRuntime.health)
         : { enabled: false, status: "unavailable" },
-      referral: {
-        enabled: Boolean(referralSettings && referralSettings.enabled),
-        rewardPerSide: Number(referralSettings && referralSettings.reward_per_side || 1),
-        rewardExpiryDays: Number(referralSettings && referralSettings.reward_expiry_days || 90),
-      },
       webRequestToken: session.claims && !isAutomatedUserAgent(req.headers["user-agent"])
         ? requestTokenFor(session.value, WEB_SESSION_SECRET)
         : "",
     }, sessionCookie ? { "Set-Cookie": sessionCookie } : {});
-    return;
-  }
-
-  if (url.pathname === "/api/referral/status" && req.method === "GET") {
-    const context = await validReferralRequest(req, res, false);
-    if (!context) { rejectWebsiteSession(res); return; }
-    try {
-      const status = await referralRuntime.service.getPublicStatus({ walletHash: context.wallet.walletHash, legacyIdentityHash: context.wallet.legacyIdentityHash, language: url.searchParams.get("language") === "zh" ? "zh" : "en" }, referralRuntime.pool);
-      json(res, 200, status);
-    } catch {
-      sendError(res, 503, "REFERRAL_UNAVAILABLE", "Referral rewards are temporarily unavailable");
-    }
-    return;
-  }
-
-  if (url.pathname === "/api/referral/track" && req.method === "POST") {
-    const context = await validReferralRequest(req, res, false);
-    if (!context) { rejectWebsiteSession(res); return; }
-    try {
-      const body = await readJsonBody(req, 16 * 1024);
-      const event = String(body.event || "").trim();
-      if (!["referral_share_clicked", "referral_link_copied"].includes(event)) { sendError(res, 400, "BAD_REQUEST", "Invalid referral event"); return; }
-      recordAnalytics(req, url, event, { language: body.language === "zh" ? "zh" : "en" });
-      json(res, 200, { ok: true });
-    } catch {
-      sendError(res, 400, "BAD_REQUEST", "Invalid referral event");
-    }
     return;
   }
 
@@ -1203,43 +1109,6 @@ async function handleApiRequest(req, res, url) {
     return;
   }
 
-  if (url.pathname === "/api/admin/referrals" && req.method === "GET") {
-    if (!ADMIN_PASSWORD || !hasValidAdminSession(req)) { sendError(res, 401, "UNAUTHORIZED", "Admin login required"); return; }
-    if (!referralRuntime) { json(res, 200, { available: false, settings: null, summary: null, events: [] }); return; }
-    try {
-      const to = new Date();
-      const from = new Date(to.getTime() - 30 * 24 * 60 * 60_000);
-      const data = await referralRuntime.service.getAdminData({ from, to, limit: 100 }, referralRuntime.pool);
-      json(res, 200, { available: true, ...data });
-    } catch {
-      sendError(res, 503, "REFERRAL_UNAVAILABLE", "Referral rewards are temporarily unavailable");
-    }
-    return;
-  }
-
-  if (url.pathname === "/api/admin/referrals/settings" && req.method === "POST") {
-    if (!ADMIN_PASSWORD || !hasValidAdminSession(req) || !isSameOriginRequest(req)) { sendError(res, 403, "FORBIDDEN", "Admin authorization required"); return; }
-    if (!referralRuntime) { sendError(res, 503, "REFERRAL_UNAVAILABLE", "Referral rewards are temporarily unavailable"); return; }
-    try {
-      const body = await readJsonBody(req);
-      const dailyRewardCap = Number(body.dailyRewardCap);
-      if (!Number.isSafeInteger(dailyRewardCap) || dailyRewardCap < 0 || dailyRewardCap > 500) {
-        sendError(res, 400, "BAD_CAP", "Daily reward cap must be an integer from 0 to 500");
-        return;
-      }
-      const adminCookie = parseCookies(req)[ADMIN_COOKIE] || "";
-      const settings = await referralRuntime.service.updateAdminSettings({
-        enabled: Boolean(body.enabled),
-        dailyRewardCap,
-        adminSessionHash: hashAnonymousIdentity(adminCookie, ADMIN_SESSION_SECRET),
-      }, referralRuntime.pool);
-      json(res, 200, { ok: true, settings });
-    } catch {
-      sendError(res, 400, "BAD_SETTINGS", "Referral settings could not be saved");
-    }
-    return;
-  }
-
   if (url.pathname === "/api/admin/export" && req.method === "GET") {
     if (!ADMIN_PASSWORD || !hasValidAdminSession(req)) {
       sendError(res, 401, "UNAUTHORIZED", "Admin login required");
@@ -1266,7 +1135,6 @@ async function handleApiRequest(req, res, url) {
       rejectWebsiteSession(res);
       return;
     }
-    const referralContext = await referralWalletContext(req, res, websiteSession);
     const contentType = req.headers["content-type"] || "";
     const boundaryMatch = contentType.match(/boundary=(.+)$/);
     if (!boundaryMatch) {
@@ -1379,8 +1247,6 @@ async function handleApiRequest(req, res, url) {
         originalName: pdfPart.filename,
         analyticsMeta,
         ...jobAccess,
-        walletHash: referralContext && referralContext.walletHash || "",
-        legacyIdentityHash: referralContext && referralContext.legacyIdentityHash || "",
         targetBytes: parseSizeToBytes(targetMB),
         targetMB,
         state: {
@@ -1482,30 +1348,6 @@ async function handleApiRequest(req, res, url) {
       sendError(res, 404, "NOT_FOUND", "The file has expired. Please compress it again.");
       return;
     }
-
-    // Only settle an invitation after the compressed result is confirmed to exist.
-    // A stale job or a missing output must never consume the one-time reward trigger.
-    if (referralRuntime && job.freeCreditConsumed && job.walletHash) {
-      try {
-        const settings = await referralRuntime.repo.getSettings();
-        if (settings && settings.enabled) {
-          const rewardResult = await referralRuntime.service.settleFirstDownload({
-            inviteeWalletHash: job.walletHash,
-            jobId,
-            downloadTokenId: crypto.randomUUID(),
-            signals: { suspicious: false },
-          }, referralRuntime.pool);
-          job.referralRewardStatus = rewardResult.status;
-          recordAnalytics(req, url, rewardResult.status === "rewarded" ? "referral_reward_granted" : `referral_${rewardResult.status}`, {
-            jobId,
-            rewardStatus: rewardResult.status,
-          });
-        }
-      } catch (error) {
-        console.error("referral reward settlement failed", { jobId, error: error.message });
-      }
-    }
-
     const safeName = job.state.downloadName || "compressed.pdf";
     const encodedName = encodeURIComponent(safeName);
     analyticsStore.append({
@@ -1623,20 +1465,6 @@ async function handleStatic(req, res, url) {
         utm: utmFromUrl(`http://${req.headers.host || "tinypdf.cn"}${url.pathname}${url.search}`),
       });
       appendSetCookie(res, makeWebSessionCookie(req, session.value));
-      try {
-        const referralContext = await referralWalletContext(req, res, { claims: session.claims });
-        const inviteCode = url.searchParams.get("ref") || "";
-        if (referralContext && inviteCode && /^[A-Za-z0-9_-]{20,96}$/.test(inviteCode)) {
-          const captured = await referralRuntime.service.captureAttribution({
-            inviteCode,
-            inviteeWalletHash: referralContext.walletHash,
-            legacyIdentityHash: referralContext.legacyIdentityHash,
-          }, referralRuntime.pool);
-          recordAnalytics(req, url, "referral_link_opened", { status: captured.status });
-        }
-      } catch (error) {
-        console.error("referral attribution failed", { error: error.message });
-      }
     }
 
     res.writeHead(200, {
@@ -1659,24 +1487,20 @@ async function handleStatic(req, res, url) {
   }
 }
 
-function createServer() {
-  return http.createServer(async (req, res) => {
-    try {
-      const url = new URL(req.url, `http://${req.headers.host}`);
+const server = http.createServer(async (req, res) => {
+  try {
+    const url = new URL(req.url, `http://${req.headers.host}`);
 
-      if (url.pathname.startsWith("/api/")) {
-        await handleApiRequest(req, res, url);
-      } else {
-        await handleStatic(req, res, url);
-      }
-    } catch (error) {
-      console.error(error);
-      sendError(res, 500, "INTERNAL_ERROR", "Server error");
+    if (url.pathname.startsWith("/api/")) {
+      await handleApiRequest(req, res, url);
+    } else {
+      await handleStatic(req, res, url);
     }
-  });
-}
-
-const server = createServer();
+  } catch (error) {
+    console.error(error);
+    sendError(res, 500, "INTERNAL_ERROR", "Server error");
+  }
+});
 
 async function main() {
   try {
@@ -1685,17 +1509,7 @@ async function main() {
     console.error("analytics database unavailable; analytics writes are temporarily disabled");
   }
   try {
-    referralRuntime = await startDataRuntime();
-    if (referralRuntime) {
-      const settings = await referralRuntime.repo.getSettings();
-      console.log(`referral runtime ${settings && settings.enabled ? "enabled" : "disabled"}; daily cap ${settings ? settings.daily_reward_cap : 50}`);
-    }
-  } catch (error) {
-    referralRuntime = null;
-    console.error("referral runtime unavailable; referral rewards remain disabled", error.message);
-  }
-  try {
-    paymentRuntime = await startPaymentRuntime(referralRuntime);
+    paymentRuntime = await startPaymentRuntime();
     if (paymentRuntime) {
       paymentRuntime.cleanup.cleanupExpiredFiles().catch(() => console.error("payment cleanup failed"));
       paymentRuntime.worker.processPendingWebhooks().catch(() => console.error("payment webhook worker failed"));
@@ -1712,14 +1526,4 @@ async function main() {
   });
 }
 
-if (require.main === module) main().catch(console.error);
-
-module.exports = {
-  createServer,
-  startDataRuntime,
-  startPaymentRuntime,
-  setTestRuntimes({ referral = null, payment = null } = {}) {
-    referralRuntime = referral;
-    paymentRuntime = payment;
-  },
-};
+main().catch(console.error);

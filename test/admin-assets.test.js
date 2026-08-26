@@ -25,9 +25,4 @@ assert.match(
   "admin.html must use a relative script path so its UI assets resolve consistently"
 );
 
-assert.match(html, /id="referrals-section"/, "admin page must expose referral rewards settings");
-assert.match(html, /id="referral-daily-cap"/, "admin page must expose the daily referral cap");
-assert.match(adminJs, /\/api\/admin\/referrals/, "admin script must load referral metrics");
-assert.match(adminJs, /\/api\/admin\/referrals\/settings/, "admin script must save referral settings");
-
 console.log("PASS - admin page uses portable relative asset paths");

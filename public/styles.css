@@ -509,29 +509,16 @@ button:disabled {
   font-weight: 700;
 }
 
-.package-grid,
-.payment-list,
 .editor-list {
   display: grid;
   gap: 14px;
 }
 
-.package-grid {
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-}
-
-.package-card,
-.payment-card,
 .editor-card {
   padding: 18px;
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(20, 33, 61, 0.08);
-}
-
-.package-card.is-selected {
-  border-color: var(--brand);
-  box-shadow: 0 0 0 1px rgba(199, 81, 44, 0.2);
 }
 
 .package-head {

@@ -12,17 +12,6 @@ const { runCommand } = require("./lib/process-runner");
 const { makeCompressedDownloadName } = require("./lib/download-name");
 const { chooseAnalyticsFile } = require("./lib/analytics-path");
 const { createAnalyticsStore } = require("./lib/analytics-store");
-const { loadPaymentConfig, publicPaymentConfig } = require("./lib/payment/config");
-const { createPaymentPool, runPaymentMigrations } = require("./lib/payment/database");
-const { createPaymentRepository } = require("./lib/payment/repository");
-const { createOrderService } = require("./lib/payment/order-service");
-const { createR2Store } = require("./lib/payment/r2-store");
-const { createPaddleAdapter } = require("./lib/payment/paddle-client");
-const { createSlidingWindowLimiter } = require("./lib/payment/rate-limit");
-const { createCheckoutService } = require("./lib/payment/checkout-service");
-const { createWebhookService } = require("./lib/payment/webhook-service");
-const { createWebhookWorker } = require("./lib/payment/webhook-worker");
-const { createCleanupService } = require("./lib/payment/cleanup-service");
 const {
   WEB_SESSION_MAX_AGE_MS,
   createWebSession,
@@ -63,36 +52,6 @@ const WEB_SESSION_SECRET = process.env.WEB_SESSION_SECRET || ADMIN_SESSION_SECRE
 const ADMIN_COOKIE = "tinypdf_admin";
 const WEB_SESSION_COOKIE = "tinypdf_web_session";
 const ADMIN_SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-const paymentConfig = loadPaymentConfig(process.env);
-let paymentRuntime = null;
-
-async function readRawBody(req, maxBytes = 256 * 1024) {
-  const chunks = []; let size = 0;
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size > maxBytes) throw new Error("body too large");
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks).toString("utf8");
-}
-
-async function startPaymentRuntime() {
-  if (!paymentConfig.ready) return null;
-  const pool = createPaymentPool(paymentConfig.databaseUrl);
-  await runPaymentMigrations(pool, path.join(ROOT, "db/migrations"));
-  const repo = createPaymentRepository({ pool });
-  let settings = await repo.getSettings();
-  if (!settings) settings = await repo.updateSettingsAfterPaddleSync({ environment: paymentConfig.environment, billingEnabled: false, paddleProductId: paymentConfig.productId, paddlePriceId: paymentConfig.priceId, usdAmountMinor: paymentConfig.usdAmountMinor, cnyAmountMinor: paymentConfig.cnyAmountMinor });
-  const paddle = createPaddleAdapter(paymentConfig);
-  const r2 = createR2Store(paymentConfig);
-  const orders = createOrderService({ repo, pool, identityHashSecret: paymentConfig.identityHashSecret });
-  const worker = createWebhookWorker({ repo, pool, paddle, r2 });
-  const cleanup = createCleanupService({ repo, pool, r2, paddle, webhookWorker: worker });
-  const runtime = { pool, repo, paddle, r2, orders, worker, cleanup, webhook: createWebhookService({ repo, pool, paddle }), limiter: createSlidingWindowLimiter({ limit: 3, windowMs: 10 * 60_000, secret: paymentConfig.identityHashSecret }), health: { ready: true }, settings };
-  runtime.checkout = createCheckoutService({ repo, pool, orderService: orders, r2, paddle, limiter: runtime.limiter });
-  Object.defineProperty(runtime, "effectiveBilling", { get() { return Boolean(paymentConfig.enabled && runtime.settings && runtime.settings.billing_enabled && runtime.health.ready); } });
-  return runtime;
-}
 
 const MAX_UPLOAD_MB    = 100;   // 硬上限：超出直接 413 拒绝（服务端强制，不可绕过）
 // ── 运营配置（通过 Railway 环境变量控制，无需改代码）────────────────────────
@@ -646,7 +605,6 @@ function setSecurityHeaders(res) {
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   // 广告启用时放行 Google 广告域名（否则 AdSense JS 被自身 CSP 挡掉）；关闭时维持严格策略。
-  const paddleScript = " https://cdn.paddle.com";
   const adScript = AD_ENABLED_CFG
     ? " https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.google.com https://*.googleadservices.com https://adservice.google.com"
     : "";
@@ -656,8 +614,8 @@ function setSecurityHeaders(res) {
   const adImg = AD_ENABLED_CFG ? " https:" : "";
   res.setHeader(
     "Content-Security-Policy",
-    `default-src 'self'; script-src 'self'${adScript}${paddleScript}; style-src 'self' 'unsafe-inline'; ` +
-    `img-src 'self' data:${adImg}; frame-src 'self'${adFrame} https://checkout.paddle.com; connect-src 'self'${adScript} https://*.paddle.com; ` +
+    `default-src 'self'; script-src 'self'${adScript}; style-src 'self' 'unsafe-inline'; ` +
+    `img-src 'self' data:${adImg}; frame-src 'self'${adFrame}; connect-src 'self'${adScript}; ` +
     `object-src 'none'; frame-ancestors 'none'`
   );
 }
@@ -800,30 +758,6 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
 
     const reachedTarget    = resultBytes <= targetBytes;
     const noCompressNeeded = resultBytes >= originalBytes; // 已回退原文件：目标 ≥ 原文件
-    if (paymentRuntime && paymentRuntime.effectiveBilling) {
-      try {
-        const output = await fsp.readFile(outputPath);
-        const registered = await paymentRuntime.orders.registerCompressionSuccess({
-          sessionId: job.ownerSessionId,
-          jobId,
-          originalBytes,
-          targetBytes,
-          resultBytes,
-          reachedTarget,
-          language: job.analyticsMeta.landingLanguage || "en",
-          country: job.analyticsMeta.country || "",
-          attribution: job.analyticsMeta.attribution || { source: "Direct", sourceCategory: "direct" },
-        });
-        job.paymentOrderId = registered.orderId;
-        job.paymentCapability = registered.capabilityToken;
-        job.paymentRequired = registered.paymentRequired;
-        job.paymentChecksum = crypto.createHash("sha256").update(output).digest("hex");
-        job.state.payment = { orderId: registered.orderId, capabilityToken: registered.capabilityToken, required: registered.paymentRequired, expiresAt: registered.expiresAt, price: registered.price };
-      } catch (error) {
-        paymentRuntime.health.ready = false;
-        console.error("payment order registration failed");
-      }
-    }
     job.state.progress     = 1;
     job.state.status       = "done";
     job.state.message      = noCompressNeeded
@@ -953,58 +887,11 @@ async function handleApiRequest(req, res, url) {
       adSlot:      AD_SLOT_CFG,
       maxUploadMB: MAX_UPLOAD_MB,
       gsVersion:   GS_VERSION,
-      payment: paymentRuntime
-        ? publicPaymentConfig(paymentConfig, {
-          billingEnabled: paymentRuntime.effectiveBilling,
-          usdAmountMinor: Number(paymentRuntime.settings.usd_amount_minor),
-          cnyAmountMinor: Number(paymentRuntime.settings.cny_amount_minor),
-        }, paymentRuntime.health)
-        : { enabled: false, status: "unavailable" },
       webRequestToken: session.claims && !isAutomatedUserAgent(req.headers["user-agent"])
         ? requestTokenFor(session.value, WEB_SESSION_SECRET)
         : "",
     }, sessionCookie ? { "Set-Cookie": sessionCookie } : {});
     return;
-  }
-
-  if (url.pathname === "/api/paddle/webhook" && req.method === "POST") {
-    if (!paymentRuntime) { sendError(res, 503, "PAYMENT_UNAVAILABLE", "Payment service unavailable"); return; }
-    try {
-      const rawBody = await readRawBody(req);
-      const accepted = await paymentRuntime.webhook.acceptWebhook({ rawBody, signature: req.headers["paddle-signature"] || "" });
-      json(res, 200, accepted);
-    } catch {
-      sendError(res, 400, "INVALID_WEBHOOK", "Invalid payment webhook");
-    }
-    return;
-  }
-
-  const orderRoute = url.pathname.match(/^\/api\/orders\/([0-9a-f-]+)\/(checkout|status|download-url)$/i);
-  if (orderRoute) {
-    if (!paymentRuntime || isAutomatedUserAgent(req.headers["user-agent"])) { sendError(res, 404, "NOT_FOUND", "Order not found"); return; }
-    const [, orderId, action] = orderRoute;
-    const websiteSession = validWebsiteRequest(req, action !== "status");
-    const capabilityToken = req.headers["x-tinypdf-order-capability"] || "";
-    if (!websiteSession || !capabilityToken) { sendError(res, 403, "ORDER_ACCESS_DENIED", "Order access denied"); return; }
-    try {
-      if (action === "checkout" && req.method === "POST") {
-        const job = [...jobs.values()].find((item) => item.paymentOrderId === orderId);
-        const prepared = await paymentRuntime.checkout.prepareCheckout({ orderId, capabilityToken, sessionClaims: websiteSession.claims, ipPrefix: req.socket.remoteAddress || "", job: job && { filePath: job.outputPath, sizeBytes: job.state.resultBytes, checksumSha256: job.paymentChecksum } });
-        json(res, 200, prepared); return;
-      }
-      const order = await paymentRuntime.orders.getAuthorizedOrder({ orderId, capabilityToken, sessionClaims: websiteSession.claims });
-      if (action === "status" && req.method === "GET") { json(res, 200, { orderId, paymentStatus: order.payment_status, fulfillmentStatus: order.fulfillment_status, expiresAt: order.expires_at }); return; }
-      if (action === "download-url" && req.method === "GET") {
-        if (order.payment_status !== "paid" || order.fulfillment_status !== "available") { sendError(res, 409, "PAYMENT_REQUIRED", "Payment has not been confirmed"); return; }
-        const file = await paymentRuntime.repo.getActiveFileObject(orderId);
-        if (!file) { sendError(res, 404, "RESULT_EXPIRED", "Result expired"); return; }
-        const downloadUrl = await paymentRuntime.r2.createDownloadUrl({ objectKey: file.object_key, downloadName: "tinypdf-compressed.pdf", expiresInSeconds: 300 });
-        await paymentRuntime.orders.markDownloadUrlIssued(orderId);
-        json(res, 200, { downloadUrl, expiresInSeconds: 300 }); return;
-      }
-    } catch (error) {
-      sendError(res, error.code === "ORDER_ACCESS_DENIED" ? 403 : 409, error.code || "PAYMENT_ERROR", "Payment operation unavailable"); return;
-    }
   }
 
   if (url.pathname === "/api/track" && req.method === "POST") {
@@ -1302,13 +1189,6 @@ async function handleApiRequest(req, res, url) {
       sendError(res, 403, "JOB_ACCESS_DENIED", "This job is not available in the current website session.");
       return;
     }
-    if (job.paymentOrderId && job.paymentRequired) {
-      sendError(res, 409, "PAYMENT_REQUIRED", "Payment is required before download.");
-      return;
-    }
-    if (job.paymentOrderId && paymentRuntime) {
-      paymentRuntime.orders.markDownloadUrlIssued(job.paymentOrderId).catch(() => {});
-    }
 
     let stat;
     try {
@@ -1476,19 +1356,6 @@ async function main() {
     await analyticsStore.ready();
   } catch {
     console.error("analytics database unavailable; analytics writes are temporarily disabled");
-  }
-  try {
-    paymentRuntime = await startPaymentRuntime();
-    if (paymentRuntime) {
-      paymentRuntime.cleanup.cleanupExpiredFiles().catch(() => console.error("payment cleanup failed"));
-      paymentRuntime.worker.processPendingWebhooks().catch(() => console.error("payment webhook worker failed"));
-      const cleanupTimer = setInterval(() => paymentRuntime && paymentRuntime.cleanup.cleanupExpiredFiles().catch(() => console.error("payment cleanup failed")), 5 * 60_000);
-      const webhookTimer = setInterval(() => paymentRuntime && paymentRuntime.worker.processPendingWebhooks().catch(() => console.error("payment webhook worker failed")), 5_000);
-      cleanupTimer.unref(); webhookTimer.unref();
-    }
-  } catch {
-    paymentRuntime = null;
-    console.error("payment runtime unavailable; billing remains disabled");
   }
   server.listen(PORT, HOST, () => {
     console.log(`TinyPDF running at http://${HOST}:${PORT}`);

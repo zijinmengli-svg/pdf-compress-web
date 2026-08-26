@@ -27,7 +27,6 @@ let AD_SLOT       = "";    // AdSense slot ID.
 let MAX_UPLOAD_MB = 100;   // Hard upload limit in MB.
 let WEB_REQUEST_TOKEN = "";
 const webRequest = window.TinyPDFWebRequest;
-let PAYMENT_CONFIG = { enabled: false };
 
 // Submit button state
 function resetSubmitButton() {
@@ -57,7 +56,6 @@ let activeEvents       = null;
 let activeJobId        = null;
 let activeJobAccessToken = "";
 let activeDownloadName = "compressed.pdf";
-let activePayment = null;
 let lastTrackedFileSignature = "";
 const pageStartedAt = Date.now();
 
@@ -179,12 +177,6 @@ function setStatus(state) {
     msg += (msg ? " " : "") + t("rasterizedNote");
   }
   statusMessage.textContent  = msg;
-  activePayment = state.payment || null;
-  if (activePayment && activePayment.required) {
-    downloadButton.textContent = "Pay and download";
-  } else {
-    downloadButton.textContent = t("downloadButton");
-  }
   setMetrics(state);
   downloadRow.hidden = state.status !== "done";
 }
@@ -228,56 +220,12 @@ function updateFileState(file) {
 
 async function startDownload() {
   if (!activeJobId || !activeJobAccessToken) return;
-  if (activePayment && activePayment.required) {
-    try {
-      const response = await fetch(`/api/orders/${encodeURIComponent(activePayment.orderId)}/checkout`, {
-        method: "POST",
-        headers: { "X-TinyPDF-Web-Token": WEB_REQUEST_TOKEN, "X-TinyPDF-Order-Capability": activePayment.capabilityToken },
-      });
-      const checkout = await response.json();
-      if (!response.ok) throw new Error(checkout.message || "Checkout unavailable");
-      await openPaddleCheckout(checkout.transactionId);
-      pollPaidDownload();
-    } catch (error) { statusMessage.textContent = error.message || "Checkout unavailable"; }
-    return;
-  }
   const link = document.createElement("a");
   link.href = `/api/jobs/${activeJobId}/download?access=${encodeURIComponent(activeJobAccessToken)}`;
   link.download = activeDownloadName;
   document.body.appendChild(link);
   link.click();
   link.remove();
-}
-
-async function openPaddleCheckout(transactionId) {
-  if (!PAYMENT_CONFIG.clientToken) throw new Error("Checkout is not configured");
-  if (!window.Paddle) {
-    await new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = "https://cdn.paddle.com/paddle/v2/paddle.js";
-      script.onload = resolve; script.onerror = reject; document.head.appendChild(script);
-    });
-    window.Paddle.Initialize({ token: PAYMENT_CONFIG.clientToken, environment: PAYMENT_CONFIG.environment === "sandbox" ? "sandbox" : "production" });
-  }
-  window.Paddle.Checkout.open({ transactionId });
-}
-
-function pollPaidDownload() {
-  let attempts = 0;
-  const timer = window.setInterval(async () => {
-    attempts += 1;
-    try {
-      const response = await fetch(`/api/orders/${encodeURIComponent(activePayment.orderId)}/status`, { headers: { "X-TinyPDF-Order-Capability": activePayment.capabilityToken } });
-      const state = await response.json();
-      if (response.ok && state.paymentStatus === "paid" && state.fulfillmentStatus === "available") {
-        window.clearInterval(timer);
-        const urlResponse = await fetch(`/api/orders/${encodeURIComponent(activePayment.orderId)}/download-url`, { headers: { "X-TinyPDF-Web-Token": WEB_REQUEST_TOKEN, "X-TinyPDF-Order-Capability": activePayment.capabilityToken } });
-        const payload = await urlResponse.json();
-        if (urlResponse.ok) window.location.assign(payload.downloadUrl);
-      }
-    } catch {}
-    if (attempts >= 60) window.clearInterval(timer);
-  }, 2000);
 }
 
 async function submitCompression(body) {
@@ -484,7 +432,6 @@ async function initConfig() {
       if (typeof cfg.adSlot      === "string")  AD_SLOT       = cfg.adSlot;
       if (typeof cfg.maxUploadMB === "number")  MAX_UPLOAD_MB = cfg.maxUploadMB;
       if (typeof cfg.webRequestToken === "string") WEB_REQUEST_TOKEN = cfg.webRequestToken;
-      if (cfg.payment && typeof cfg.payment === "object") PAYMENT_CONFIG = cfg.payment;
     }
   } catch {
     // Keep defaults when the network request fails.

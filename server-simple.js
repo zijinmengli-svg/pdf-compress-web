@@ -1078,37 +1078,6 @@ async function handleApiRequest(req, res, url) {
     return;
   }
 
-  if (url.pathname === "/api/admin/payments" && req.method === "GET") {
-    if (!ADMIN_PASSWORD || !hasValidAdminSession(req)) { sendError(res, 401, "UNAUTHORIZED", "Admin login required"); return; }
-    if (!paymentRuntime) { json(res, 200, { available: false, summary: null, orders: [] }); return; }
-    const to = new Date(); const from = new Date(to.getTime() - 30 * 24 * 60 * 60_000);
-    const [summary, orders] = await Promise.all([paymentRuntime.repo.paymentSummary({ from, to }), paymentRuntime.repo.listOrders({ from, to, limit: 50 })]);
-    json(res, 200, { available: true, summary, orders });
-    return;
-  }
-
-  if (url.pathname === "/api/admin/payments/settings" && req.method === "POST") {
-    if (!ADMIN_PASSWORD || !hasValidAdminSession(req) || !isSameOriginRequest(req)) { sendError(res, 403, "FORBIDDEN", "Admin authorization required"); return; }
-    if (!paymentRuntime) { sendError(res, 503, "PAYMENT_UNAVAILABLE", "Payment service unavailable"); return; }
-    try {
-      const body = await readJsonBody(req);
-      const usdAmountMinor = Number(body.usdAmountMinor);
-      const cnyAmountMinor = Number(body.cnyAmountMinor);
-      if (!Number.isSafeInteger(usdAmountMinor) || usdAmountMinor <= 0 || !Number.isSafeInteger(cnyAmountMinor) || cnyAmountMinor <= 0) { sendError(res, 400, "BAD_PRICE", "Prices must be positive integer minor units"); return; }
-      const current = paymentRuntime.settings;
-      let priceId = current.paddle_price_id;
-      if (usdAmountMinor !== Number(current.usd_amount_minor) || cnyAmountMinor !== Number(current.cny_amount_minor)) {
-        const price = await paymentRuntime.paddle.createPriceVersion({ productId: current.paddle_product_id, previousPriceId: current.paddle_price_id, usdAmountMinor, cnyAmountMinor });
-        priceId = price.id;
-      }
-      paymentRuntime.settings = await paymentRuntime.repo.updateSettingsAfterPaddleSync({ environment: current.environment, billingEnabled: Boolean(body.billingEnabled), paddleProductId: current.paddle_product_id, paddlePriceId: priceId, usdAmountMinor, cnyAmountMinor, taxMode: current.tax_mode, lastSyncStatus: "synced" });
-      json(res, 200, { ok: true, settings: { billingEnabled: paymentRuntime.settings.billing_enabled, usdAmountMinor: Number(paymentRuntime.settings.usd_amount_minor), cnyAmountMinor: Number(paymentRuntime.settings.cny_amount_minor), paddlePriceId: paymentRuntime.settings.paddle_price_id } });
-    } catch {
-      sendError(res, 502, "PRICE_SYNC_FAILED", "Paddle price update failed; local settings were not changed");
-    }
-    return;
-  }
-
   if (url.pathname === "/api/admin/export" && req.method === "GET") {
     if (!ADMIN_PASSWORD || !hasValidAdminSession(req)) {
       sendError(res, 401, "UNAUTHORIZED", "Admin login required");

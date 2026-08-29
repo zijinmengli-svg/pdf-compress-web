@@ -12,6 +12,7 @@ const { runCommand } = require("./lib/process-runner");
 const { makeCompressedDownloadName } = require("./lib/download-name");
 const { chooseAnalyticsFile } = require("./lib/analytics-path");
 const { createAnalyticsStore } = require("./lib/analytics-store");
+const { compressionTimeoutMs } = require("./lib/compression-timeout");
 const {
   WEB_SESSION_MAX_AGE_MS,
   createWebSession,
@@ -70,10 +71,10 @@ const MAX_INFLIGHT_UPLOADS = Math.max(1, Number(process.env.MAX_INFLIGHT_UPLOADS
 // Ghostscript is an external process. A malformed or unusual PDF must never
 // leave the HTTP job in processing forever if Ghostscript stops responding.
 const GS_TIMEOUT_MS = Math.max(5_000, Number(process.env.GS_TIMEOUT_MS) || 45_000);
-const COMPRESSION_TIMEOUT_MS = Math.max(
-  GS_TIMEOUT_MS,
-  Number(process.env.COMPRESSION_TIMEOUT_MS) || 180_000
-);
+// Each Ghostscript pass is independently bounded by GS_TIMEOUT_MS. The overall
+// workflow also needs time for multiple quality/resolution probes and raster
+// fallback; 10 minutes avoids aborting legitimate multi-page PDFs at 180s.
+const COMPRESSION_TIMEOUT_MS = compressionTimeoutMs(process.env, GS_TIMEOUT_MS);
 
 function isProcessTerminationError(error) {
   return error && ["ETIMEDOUT", "ABORT_ERR"].includes(error.code);

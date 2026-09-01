@@ -13,6 +13,7 @@ const { makeCompressedDownloadName } = require("./lib/download-name");
 const { chooseAnalyticsFile } = require("./lib/analytics-path");
 const { createAnalyticsStore } = require("./lib/analytics-store");
 const { compressionTimeoutMs } = require("./lib/compression-timeout");
+const { gsTimeoutMsForBytes } = require("./lib/gs-timeout");
 const {
   WEB_SESSION_MAX_AGE_MS,
   createWebSession,
@@ -70,10 +71,13 @@ const MAX_INFLIGHT_UPLOADS = Math.max(1, Number(process.env.MAX_INFLIGHT_UPLOADS
 
 // Ghostscript is an external process. A malformed or unusual PDF must never
 // leave the HTTP job in processing forever if Ghostscript stops responding.
+// The per-job timeout is widened for large inputs below; keeping this base
+// value conservative avoids tying up a free instance on small malformed PDFs.
 const GS_TIMEOUT_MS = Math.max(5_000, Number(process.env.GS_TIMEOUT_MS) || 45_000);
-// Each Ghostscript pass is independently bounded by GS_TIMEOUT_MS. The overall
-// workflow also needs time for multiple quality/resolution probes and raster
-// fallback; 10 minutes avoids aborting legitimate multi-page PDFs at 180s.
+// Each Ghostscript pass is independently bounded by an adaptive timeout based
+// on input size (with GS_TIMEOUT_MS as the minimum). The overall workflow also
+// needs time for multiple quality/resolution probes and raster fallback; 10
+// minutes avoids aborting legitimate multi-page PDFs at the old 180s cutoff.
 const COMPRESSION_TIMEOUT_MS = compressionTimeoutMs(process.env, GS_TIMEOUT_MS);
 
 function isProcessTerminationError(error) {
@@ -445,14 +449,14 @@ function buildPdfFromJpegs(jpegBufs, dpi) {
 }
 
 // 用 Ghostscript 把 PDF 每页渲染成 JPEG → 重组为 PDF，返回 PDF Buffer
-async function rasterizeToJpegPdf(inputPath, dpi, quality, signal) {
+async function rasterizeToJpegPdf(inputPath, dpi, quality, signal, timeoutMs = GS_TIMEOUT_MS) {
   const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), "tinypdf-raster-"));
   try {
     const pattern = path.join(tmpDir, "p-%04d.jpg");
     const result = await runCommand("gs", [
       "-sDEVICE=jpeg", `-r${dpi}`, `-dJPEGQ=${quality}`,
       "-dNOPAUSE", "-dBATCH", "-dQUIET", `-sOutputFile=${pattern}`, inputPath,
-    ], { timeoutMs: GS_TIMEOUT_MS, signal });
+    ], { timeoutMs, signal });
     if (result.code !== 0) {
       throw new Error(`gs jpeg exited ${result.code}: ${result.stderr.toString().slice(0, 200)}`);
     }
@@ -469,7 +473,7 @@ async function rasterizeToJpegPdf(inputPath, dpi, quality, signal) {
 // 探测 + 对数-对数 DPI 搜索 + 质量阶梯 + 绝对地板。
 // 自高到低搜索，第一个 <= 目标的结果即返回（达标前提下画质最好）。
 // 若目标物理上不可达，返回能产出的最小结果（尽力而为，绝不返回原文件）。
-async function forceRasterToTarget(jobId, job, inputPath, targetBytes, signal) {
+async function forceRasterToTarget(jobId, job, inputPath, targetBytes, signal, timeoutMs = GS_TIMEOUT_MS) {
   const PROBE_DPI = 72, PROBE_Q = 45, DPI_FLOOR = 8;
   const pts = [];          // {dpi, bytes} 用于对数-对数拟合
   let smallest = null;     // 目标不可达时的兜底（最小结果）
@@ -482,7 +486,7 @@ async function forceRasterToTarget(jobId, job, inputPath, targetBytes, signal) {
   };
   const tryPass = async (d, qq) => {
     try {
-      const p = await rasterizeToJpegPdf(inputPath, d, qq, signal);
+      const p = await rasterizeToJpegPdf(inputPath, d, qq, signal, timeoutMs);
       if (p && p.length >= 64) { if (!smallest || p.length < smallest.length) smallest = p; return p; }
     } catch (error) {
       if (isProcessTerminationError(error)) throw error;
@@ -538,7 +542,7 @@ async function forceRasterToTarget(jobId, job, inputPath, targetBytes, signal) {
 // 矢量保真的连续质量旋钮：pdfwrite + 关闭 JPEG 直通 + 强制 DCT 重编码 + 自定义 QFactor。
 // QFactor 越小画质越高、体积越大（与体积近似幂律关系），可平滑命中任意目标体积，
 // 且文字/矢量保持清晰（不栅格化）。resCap 限制图像分辨率上限（默认 300，超过才下采样）。
-async function runGsQf(inputPath, outputPath, qf, resCap, signal) {
+async function runGsQf(inputPath, outputPath, qf, resCap, signal, timeoutMs = GS_TIMEOUT_MS) {
     const ps =
       `<< /ColorImageDict << /QFactor ${qf} /Blend 1 /HSamples [2 1 1 2] /VSamples [2 1 1 2] >> ` +
       `/GrayImageDict << /QFactor ${qf} /Blend 1 /HSamples [2 1 1 2] /VSamples [2 1 1 2] >> >> setdistillerparams`;
@@ -560,7 +564,7 @@ async function runGsQf(inputPath, outputPath, qf, resCap, signal) {
       `-sOutputFile=${outputPath}`,
       "-c", ps, "-f", inputPath,
     ];
-    const result = await runCommand("gs", args, { timeoutMs: GS_TIMEOUT_MS, signal });
+    const result = await runCommand("gs", args, { timeoutMs, signal });
     if (result.code !== 0) {
       throw new Error(`gs qf exited ${result.code}: ${result.stderr.toString("utf8").slice(0, 200)}`);
     }
@@ -569,7 +573,7 @@ async function runGsQf(inputPath, outputPath, qf, resCap, signal) {
 // 分辨率优先的矢量压缩搜索：构造真实 Ghostscript probe，交由纯函数 searchBestConfig 选最优
 // (分辨率,质量) 配置。probe 即用即删探测临时文件，返回字节数或 null。
 // 返回 { qf, resCap, bytes }(≤target) 或 null（交由栅格化兜底）。不落地最终文件，由调用方按配置渲染。
-async function vectorCompressSearch(jobId, job, inputPath, scratchBase, targetBytes, minValidBytes, signal) {
+async function vectorCompressSearch(jobId, job, inputPath, scratchBase, targetBytes, minValidBytes, signal, timeoutMs = GS_TIMEOUT_MS) {
   let step = 0;
   const scratch = `${scratchBase}.probe.tmp`;
   const probe = async (qf, resCap) => {
@@ -577,7 +581,7 @@ async function vectorCompressSearch(jobId, job, inputPath, scratchBase, targetBy
     job.state.message  = "Searching for the clearest version that fits the target size...";
     sendEvent(jobId, job.state);
     step++;
-    try { await runGsQf(inputPath, scratch, qf, resCap, signal); }
+    try { await runGsQf(inputPath, scratch, qf, resCap, signal, timeoutMs); }
     catch (error) {
       console.error("compression_probe_failed", { jobId, phase: "vector_probe", error: error.message });
       try { fs.unlinkSync(scratch); } catch {}
@@ -670,6 +674,14 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
       fsp.stat(inputPath)
     ]);
     const originalBytes = inputStat.size;
+    const jobGsTimeoutMs = gsTimeoutMsForBytes(originalBytes, process.env);
+    console.info("compression_budget", {
+      jobId,
+      inputBytes: originalBytes,
+      targetBytes,
+      gsTimeoutMs: jobGsTimeoutMs,
+      overallTimeoutMs: COMPRESSION_TIMEOUT_MS,
+    });
 
     if (!pdfInfo.valid)     throw new Error("This is not a valid PDF file");
     if (pdfInfo.encrypted)  throw new Error("Encrypted PDFs are not supported. Please unlock the file and try again.");
@@ -700,9 +712,9 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     if (resultBytes === null) {
       job.state.phase = "vector_search";
       try {
-        const cfg = await vectorCompressSearch(jobId, job, inputPath, outputPath, targetBytes, MIN_VALID_BYTES, controller.signal);
+        const cfg = await vectorCompressSearch(jobId, job, inputPath, outputPath, targetBytes, MIN_VALID_BYTES, controller.signal, jobGsTimeoutMs);
         if (cfg) {
-          await runGsQf(inputPath, outputPath, cfg.qf, cfg.resCap, controller.signal); // 用选定配置渲染最终输出
+          await runGsQf(inputPath, outputPath, cfg.qf, cfg.resCap, controller.signal, jobGsTimeoutMs); // 用选定配置渲染最终输出
           const st = await fsp.stat(outputPath);
           if (st.size <= targetBytes && st.size >= MIN_VALID_BYTES) {
             resultBytes    = st.size;
@@ -723,7 +735,7 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     if (resultBytes === null || resultBytes > targetBytes) {
       job.state.phase = "raster_fallback";
       try {
-        const rasterPdf = await forceRasterToTarget(jobId, job, inputPath, targetBytes, controller.signal);
+        const rasterPdf = await forceRasterToTarget(jobId, job, inputPath, targetBytes, controller.signal, jobGsTimeoutMs);
         if (rasterPdf && rasterPdf.length >= MIN_VALID_BYTES) {
           await fsp.writeFile(outputPath, rasterPdf);
           resultBytes    = rasterPdf.length;

@@ -76,7 +76,7 @@ const MAX_INFLIGHT_UPLOADS = Math.max(1, Number(process.env.MAX_INFLIGHT_UPLOADS
 const GS_TIMEOUT_MS = Math.max(5_000, Number(process.env.GS_TIMEOUT_MS) || 45_000);
 // Each Ghostscript pass is independently bounded by an adaptive timeout based
 // on input size (with GS_TIMEOUT_MS as the minimum). The overall workflow also
-// needs time for multiple quality/resolution probes and raster fallback; 10
+// needs time for multiple quality/resolution probes and raster fallback; 30
 // minutes avoids aborting legitimate multi-page PDFs at the old 180s cutoff.
 const COMPRESSION_TIMEOUT_MS = compressionTimeoutMs(process.env, GS_TIMEOUT_MS);
 

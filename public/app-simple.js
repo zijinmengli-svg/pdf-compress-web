@@ -87,6 +87,12 @@ function getSessionId() {
   }
 }
 
+function newUploadAttemptId() {
+  return window.crypto && window.crypto.randomUUID
+    ? window.crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 function currentUtm() {
   const params = new URLSearchParams(window.location.search);
   return {
@@ -304,9 +310,11 @@ async function doCompress() {
     ratio: null
   });
 
+  const uploadAttemptId = newUploadAttemptId();
   const body = new FormData();
   body.append("pdf", file);
   body.append("targetMB", targetInput.value.trim());
+  body.append("uploadAttemptId", uploadAttemptId);
   const utm = currentUtm();
   body.append("utmSource", utm.source);
   body.append("utmMedium", utm.medium);
@@ -318,6 +326,7 @@ async function doCompress() {
     fileName: file.name,
     fileBytes: file.size,
     targetMB: Number(targetInput.value.trim()),
+    uploadAttemptId,
   });
 
   try {

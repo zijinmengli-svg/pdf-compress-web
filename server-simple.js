@@ -806,6 +806,7 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
         reachedTarget,
         rasterized: Boolean(job.state.rasterized),
         jobId,
+        uploadAttemptId: job.uploadAttemptId || "",
       },
     }).catch(() => {});
 
@@ -830,6 +831,7 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
         code: job.state.errorCode,
         phase: job.state.phase || "unknown",
         jobId,
+        uploadAttemptId: job.uploadAttemptId || "",
         elapsedMs: Date.now() - startedAt,
       },
     }).catch(() => {});
@@ -1036,6 +1038,10 @@ async function handleApiRequest(req, res, url) {
         const part = parts.find(p => p.name === name);
         return part ? part.content.toString("utf8") : "";
       };
+      const rawUploadAttemptId = formField("uploadAttemptId").trim();
+      const uploadAttemptId = /^[a-zA-Z0-9._-]{8,128}$/.test(rawUploadAttemptId)
+        ? rawUploadAttemptId
+        : "";
 
       if (!pdfPart || !pdfPart.filename || !targetMBPart) {
         sendError(res, 400, "BAD_REQUEST", "Please choose a PDF file and enter a target size");
@@ -1094,6 +1100,7 @@ async function handleApiRequest(req, res, url) {
           fileCategory: classifyFileName(pdfPart.filename),
           fileBytes: uploadBytes,
           jobId,
+          uploadAttemptId,
         },
       }).catch(() => {});
       analyticsStore.append({
@@ -1106,6 +1113,7 @@ async function handleApiRequest(req, res, url) {
           targetMB,
           targetBytes: parseSizeToBytes(targetMB),
           jobId,
+          uploadAttemptId,
         },
       }).catch(() => {});
 
@@ -1118,6 +1126,7 @@ async function handleApiRequest(req, res, url) {
         ...jobAccess,
         targetBytes: parseSizeToBytes(targetMB),
         targetMB,
+        uploadAttemptId,
         state: {
           id: jobId,
           status: "processing",
@@ -1223,6 +1232,7 @@ async function handleApiRequest(req, res, url) {
         targetBytes: job.state.targetBytes || job.targetBytes || "",
         resultBytes: job.state.resultBytes || stat.size,
         jobId,
+        uploadAttemptId: job.uploadAttemptId || "",
       },
     }).catch(() => {});
     res.writeHead(200, {

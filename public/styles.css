@@ -1851,8 +1851,10 @@ body.admin-page {
 }
 
 .status-tag.is-processing,
+.status-tag.is-slow,
 .status-tag.is-pending,
-.status-tag.is-timeout {
+.status-tag.is-timeout,
+.status-tag.is-lost {
   background: #efefea;
   color: var(--admin-muted);
 }

@@ -359,10 +359,15 @@ async function startServer(port, env) {
         .find(value => value.startsWith("tinypdf_web_session="))
         .split(";")[0];
       const track = await request(3822, "POST", "/api/track", {
-        event: "file_selected",
+        event: "compress_started",
         sessionId: "s-track",
         clientId: "c-track",
-        data: { fileName: "sales-deck.pdf", fileBytes: 2 * 1024 * 1024 },
+        data: {
+          fileName: "sales-deck.pdf",
+          fileBytes: 2 * 1024 * 1024,
+          targetMB: 1,
+          jobId: "tracked-job",
+        },
       }, { "CF-IPCountry": "US", Cookie: webCookie });
       assert.strictEqual(track.status, 200);
 

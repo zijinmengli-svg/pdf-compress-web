@@ -127,7 +127,15 @@ function deviceLabel(value) {
 }
 
 function statusLabel(value) {
-  const labels = { success: "成功", error: "失败", processing: "处理中", timeout: "超时/中断", pending: "待处理" };
+  const labels = {
+    success: "成功",
+    error: "失败",
+    processing: "处理中",
+    slow: "耗时处理中",
+    timeout: "服务器超时",
+    lost: "任务失联",
+    pending: "待处理",
+  };
   return labels[value] || "成功";
 }
 

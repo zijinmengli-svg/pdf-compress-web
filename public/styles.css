@@ -2015,3 +2015,54 @@ body.admin-page {
   .admin-secondary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-metric-card { min-height: 124px; }
 }
+
+/* Target size landing pages (/compress-pdf-to-20mb and siblings). */
+.landing-copy {
+  gap: 16px;
+}
+.landing-h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+.landing-copy p {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.landing-copy ul,
+.landing-copy ol {
+  margin: 0;
+  padding-left: 22px;
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--ink);
+}
+.landing-copy li { margin-bottom: 10px; }
+.landing-copy li:last-child { margin-bottom: 0; }
+.landing-copy li strong { color: var(--ink); }
+.faq-card .landing-faq-title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.2;
+}
+.landing-sizes {
+  gap: 14px;
+}
+.landing-sizes .footer-links { gap: 18px; }
+
+/* Compact size shortcuts shown on the homepage. */
+.size-shortcuts {
+  gap: 10px;
+}
+.size-shortcuts .footer-links { gap: 14px; }
+
+@media (max-width: 640px) {
+  .landing-copy p,
+  .landing-copy ul,
+  .landing-copy ol { font-size: 15px; }
+  .landing-h2 { font-size: 19px; }
+  .faq-card .landing-faq-title { font-size: 20px; }
+}

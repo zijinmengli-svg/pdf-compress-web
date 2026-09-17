@@ -8,6 +8,13 @@ Official pages:
 - Chinese homepage: https://tinypdf.cn/zh/
 - Chinese FAQ: https://tinypdf.cn/zh/faq
 
+Target size pages (each page opens with the target size already filled in):
+- Compress PDF to 20MB: https://tinypdf.cn/compress-pdf-to-20mb
+- Compress PDF to 10MB: https://tinypdf.cn/compress-pdf-to-10mb
+- Compress PDF to 5MB: https://tinypdf.cn/compress-pdf-to-5mb
+- Compress PDF to 2MB: https://tinypdf.cn/compress-pdf-to-2mb
+- Compress PDF to 1MB: https://tinypdf.cn/compress-pdf-to-1mb
+
 Supported website workflow:
 - One PDF at a time
 - One file up to 100MB

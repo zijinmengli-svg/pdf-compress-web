@@ -205,6 +205,27 @@ async function startServer(port, env) {
     assert.strictEqual(summary.recentEvents.length, 8);
   });
 
+  await test("summarizeAnalytics keeps all-time totals outside the 30-day dashboard window", async () => {
+    const now = new Date("2026-07-03T12:00:00.000Z");
+    const events = [
+      { ts: "2026-04-01T09:00:00.000Z", event: "page_view", sessionId: "old-session", clientId: "old-visitor", data: {} },
+      { ts: "2026-04-01T09:01:00.000Z", event: "compress_success", sessionId: "old-session", clientId: "old-visitor", data: { fileName: "old.pdf" } },
+      { ts: "2026-04-01T09:02:00.000Z", event: "download_clicked", sessionId: "old-session", clientId: "old-visitor", data: { fileName: "old.pdf" } },
+      { ts: "2026-07-03T09:00:00.000Z", event: "page_view", sessionId: "current-one", clientId: "current-visitor", data: {} },
+      { ts: "2026-07-03T09:01:00.000Z", event: "page_view", sessionId: "current-two", clientId: "current-visitor", data: {} },
+      { ts: "2026-07-03T09:02:00.000Z", event: "compress_success", sessionId: "current-one", clientId: "current-visitor", data: { fileName: "current.pdf" } },
+      { ts: "2026-07-03T09:03:00.000Z", event: "download_clicked", sessionId: "current-one", clientId: "current-visitor", data: { fileName: "current.pdf" } },
+    ];
+
+    const summary = summarizeAnalytics(events, now);
+
+    assert.strictEqual(summary.overview.pageViews30d, 2);
+    assert.strictEqual(summary.overview.pageViewsAllTime, 3);
+    assert.strictEqual(summary.overview.uniqueVisitorsAllTime, 2);
+    assert.strictEqual(summary.overview.compressionsAllTime, 2);
+    assert.strictEqual(summary.overview.downloadsAllTime, 2);
+  });
+
   await test("summarizeAnalytics uses server compression events when client tracking is missing", async () => {
     const now = new Date("2026-07-03T12:00:00.000Z");
     const events = [

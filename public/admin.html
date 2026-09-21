@@ -78,10 +78,28 @@
           <section id="overview-section" class="admin-section-title">
             <div>
               <h2>核心指标</h2>
-              <p id="date-range-copy">数据区间：近 30 天</p>
             </div>
           </section>
-          <div class="admin-metric-grid" id="overview-grid"></div>
+
+          <section class="admin-metric-section" aria-labelledby="all-time-metrics-title">
+            <div class="admin-metric-section-head">
+              <div>
+                <h3 id="all-time-metrics-title">历史累计</h3>
+                <p>统计范围：网站创建以来</p>
+              </div>
+            </div>
+            <div class="admin-metric-grid" id="all-time-grid"></div>
+          </section>
+
+          <section class="admin-metric-section" aria-labelledby="monthly-metrics-title">
+            <div class="admin-metric-section-head">
+              <div>
+                <h3 id="monthly-metrics-title">近 1 个月</h3>
+                <p id="date-range-copy">数据区间：近 30 天</p>
+              </div>
+            </div>
+            <div class="admin-metric-grid" id="overview-grid"></div>
+          </section>
           <div class="admin-secondary-grid" id="secondary-grid"></div>
 
           <section class="admin-analytics-grid" id="traffic-section">

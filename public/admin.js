@@ -162,8 +162,24 @@ function metricCard(label, value, comparison, footnote) {
   `;
 }
 
+function allTimeMetricCard(label, value) {
+  return `
+    <article class="admin-metric-card admin-metric-card-total">
+      <div class="admin-metric-top"><span>${text(label)}</span></div>
+      <strong>${text(value)}</strong>
+      <p>网站创立以来</p>
+    </article>
+  `;
+}
+
 function renderStats(summary) {
   const comparisons = summary.overview.comparisons || {};
+  document.getElementById("all-time-grid").innerHTML = [
+    allTimeMetricCard("历史总浏览量", formatNumber(summary.overview.pageViewsAllTime)),
+    allTimeMetricCard("历史总访客数", formatNumber(summary.overview.uniqueVisitorsAllTime)),
+    allTimeMetricCard("历史总压缩数据", formatNumber(summary.overview.compressionsAllTime)),
+    allTimeMetricCard("历史总文件下载数", formatNumber(summary.overview.downloadsAllTime)),
+  ].join("");
   const items = [
     metricCard("页面浏览量", formatNumber(summary.overview.pageViews30d), comparisons.pageViews30d),
     metricCard("独立访客", formatNumber(summary.overview.uniqueVisitors30d || summary.overview.uniqueVisitors7d), comparisons.uniqueVisitors30d),

@@ -1432,9 +1432,33 @@ body.admin-page {
 }
 
 .admin-section-title h2,
-.admin-card h3 {
+.admin-card h3,
+.admin-metric-section-head h3 {
   font-size: 22px;
   line-height: 1.2;
+}
+
+.admin-metric-section {
+  margin-bottom: 26px;
+}
+
+.admin-metric-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  margin: 0 0 14px;
+}
+
+.admin-metric-section-head h3 {
+  margin: 0;
+  color: var(--admin-text);
+  letter-spacing: 0;
+}
+
+.admin-metric-section-head p {
+  margin: 6px 0 0;
+  color: var(--admin-muted);
+  font-size: 13px;
 }
 
 .admin-metric-grid {
@@ -1519,6 +1543,10 @@ body.admin-page {
   margin: 20px 0 0;
   color: var(--admin-muted);
   font-size: 13px;
+}
+
+.admin-metric-card-total {
+  background: linear-gradient(135deg, #fff 0%, #f6fbf8 100%);
 }
 
 .admin-analytics-grid {

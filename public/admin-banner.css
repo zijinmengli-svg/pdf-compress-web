@@ -1,0 +1,9 @@
+.admin-banner-panel{background:#fff;padding:24px;border:1px solid #e5e5e5;border-radius:20px;margin-bottom:24px;scroll-margin-top:20px}
+.admin-banner-panel p{color:#666;line-height:1.6}
+#banner-form{display:grid;gap:16px}
+#banner-form label{display:block}
+#banner-form input[type=url]{display:block;width:100%;margin-top:8px;padding:12px;border:1px solid #ccc;border-radius:8px;box-sizing:border-box}
+#banner-form input[type=file]{display:block;margin-top:8px;max-width:100%}
+#banner-preview{width:100%;height:auto;border:1px solid #ddd;background:#121212}
+#banner-form button{padding:10px 18px;border-radius:8px;border:1px solid #ccc;cursor:pointer}
+#banner-form button:disabled{opacity:.5;cursor:wait}

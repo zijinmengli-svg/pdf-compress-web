@@ -103,6 +103,7 @@ function eventLabel(value) {
     compress_success: "压缩成功",
     compress_error: "压缩失败",
     download_clicked: "点击下载",
+    banner_clicked: "点击顶部 Banner",
     session_end: "会话结束",
   };
   return labels[value] || value || "-";
@@ -409,6 +410,7 @@ async function loadSummary({ manual = false } = {}) {
     render(await response.json());
     loginPanel.hidden = true;
     dashboard.hidden = false;
+    document.dispatchEvent(new Event("admin-authenticated"));
     logoutButton.hidden = false;
     setRefreshStatus("success", refreshedAtMessage());
   } catch (error) {

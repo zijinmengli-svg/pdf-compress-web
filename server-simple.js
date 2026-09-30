@@ -12,6 +12,8 @@ const { runCommand } = require("./lib/process-runner");
 const { makeCompressedDownloadName } = require("./lib/download-name");
 const { chooseAnalyticsFile } = require("./lib/analytics-path");
 const { createAnalyticsStore } = require("./lib/analytics-store");
+const { createBannerStore } = require("./lib/banner-store");
+const { createBannerRoutes } = require("./lib/banner-routes");
 const { compressionTimeoutMs } = require("./lib/compression-timeout");
 const { gsTimeoutMsForBytes } = require("./lib/gs-timeout");
 const {
@@ -876,7 +878,13 @@ async function handleMultipart(req, boundary, maxSize) {
   return parts;
 }
 
+const handleBannerRequest = createBannerRoutes({
+  store: createBannerStore({ databaseUrl: process.env.DATABASE_URL || "" }),
+  admin: hasValidAdminSession, website: validWebsiteRequest, sameOrigin: isSameOriginRequest,
+  readJson: readJsonBody, json, record: recordAnalytics,
+});
 async function handleApiRequest(req, res, url) {
+  if (await handleBannerRequest(req, res, url)) return;
   if (url.pathname === "/api/config" && req.method === "GET") {
     let session = webSessionContext(req);
     let sessionCookie = "";

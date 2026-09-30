@@ -1200,7 +1200,11 @@ async function handleApiRequest(req, res, url) {
       res.write(`data: ${JSON.stringify(job.state)}\n\n`);
     }
 
-    req.on("close", () => {
+    const heartbeat = setInterval(() => {
+      if (!res.destroyed) res.write(": keep-alive\n\n");
+    }, 15000);
+    res.on("close", () => {
+      clearInterval(heartbeat);
       const current = eventStreams.get(jobId) || [];
       eventStreams.set(jobId, current.filter(r => r !== res));
     });

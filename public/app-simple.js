@@ -299,9 +299,9 @@ async function submitCompression(body) {
     }
   };
   activeEvents.onerror = () => {
-    if (activeEvents) activeEvents.close();
-    activeEvents = null;
-    resetSubmitButton();
+    // EventSource reconnects on its own. The next connection receives the
+    // current job state, including a result completed while offline.
+    statusMessage.textContent = t("connectionRetrying");
   };
 }
 

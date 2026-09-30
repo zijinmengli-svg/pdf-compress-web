@@ -6,4 +6,7 @@
 #banner-form input[type=file]{display:block;margin-top:8px;max-width:100%}
 #banner-preview{width:100%;height:auto;border:1px solid #ddd;background:#121212}
 #banner-form button{padding:10px 18px;border-radius:8px;border:1px solid #ccc;cursor:pointer}
+#banner-save{background:#121212;color:#fff;border-color:#121212}
+#banner-reload{background:#fff;color:#121212;border-color:#bdbdbd}
 #banner-form button:disabled{opacity:.5;cursor:wait}
+#banner-message.is-error{color:#c62828;font-weight:600}

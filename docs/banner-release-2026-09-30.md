@@ -2,7 +2,7 @@
 
 Scope: image banner only. No compression, payment, referral or Sketch UI changes.
 
-Admin `/admin.html` → 顶部 Banner: upload a static PNG/JPEG exactly 1920×48px, at most 1MB; enter an HTTPS destination; enable and save. Default disabled. The public image scales at 40:1, opens a new tab on click, and has an independent close control. Closing is remembered per browser tab session and configuration version. Updating configuration makes the new version visible again.
+Admin `/admin.html` → 顶部 Banner: upload a static PNG/JPEG exactly 1920×40px, at most 1MB; enter an HTTPS destination; enable and save. Default disabled. The public image scales at 48:1, opens a new tab on click, and has an independent close control. Closing is remembered per browser tab session and configuration version. Updating configuration makes the new version visible again.
 
 Persistence uses the existing DATABASE_URL, with additive `site_banner` and `banner_click_events` tables. No R2 or ephemeral-file storage. Keep database backups as for existing analytics. A database outage hides the public banner and reports an admin error; compression does not depend on banner availability.
 

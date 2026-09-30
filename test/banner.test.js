@@ -4,7 +4,7 @@ const zlib = require('node:zlib');
 const { createBannerStore, validateImage, validateLink } = require('../lib/banner-store');
 
 // Tiny, real PNG fixture: opaque pixels, CRC-protected chunks, no personal image.
-function png(width = 1920, height = 48) {
+function png(width = 1920, height = 40) {
   function chunk(type, data) {
     const content = Buffer.concat([Buffer.from(type), data]);
     let crc = 0xffffffff;
@@ -21,7 +21,8 @@ async function run() {
   const pool = new (newDb({noAstCoverageCheck:true}).adapters.createPg().Pool)();
   const store = createBannerStore({pool});
   assert.equal((await store.get()).enabled,false);
-  assert.throws(()=>validateImage(png(100,48)), /1920/);
+  assert.throws(()=>validateImage(png(100,40)), /1920/);
+  assert.throws(()=>validateImage(png(1920,48)), /1920/);
   assert.throws(()=>validateImage(Buffer.from('<svg onload="alert(1)"/>')), /PNG|JPEG/);
   assert.throws(()=>validateImage(Buffer.alloc(1048577)), /1MB/);
   assert.throws(()=>validateLink('javascript:alert(1)'), /HTTPS/);

@@ -76,19 +76,6 @@
         </section>
 
         <section class="admin-content" id="dashboard" hidden>
-          <section id="banner-section" class="admin-banner-panel">
-            <h2>顶部 Banner</h2>
-            <p>上传 1920 × 48px 的 PNG/JPEG 长图（不超过 1MB）。图片按比例铺满页面宽度，点击后在新窗口打开链接。</p>
-            <form id="banner-form">
-              <label><input id="banner-enabled" type="checkbox" /> 开启 Banner</label>
-              <label>跳转链接（HTTPS）<input id="banner-link" type="url" maxlength="2048" placeholder="https://" /></label>
-              <label>替换图片<input id="banner-file" type="file" accept="image/png,image/jpeg" /></label>
-              <img id="banner-preview" alt="Banner 图片预览" hidden />
-              <div><button type="submit" id="banner-save" disabled>保存配置</button> <button type="button" id="banner-reload">重新加载</button></div>
-              <p id="banner-message" role="status" aria-live="polite">等待加载</p>
-              <p id="banner-clicks"></p>
-            </form>
-          </section>
           <section id="overview-section" class="admin-section-title">
             <div>
               <h2>核心指标</h2>
@@ -220,13 +207,26 @@
               </table>
             </div>
           </section>
+          <section id="banner-section" class="admin-banner-panel">
+            <h2>顶部 Banner</h2>
+            <p>上传 1920 × 40px 的 PNG/JPEG 长图（不超过 1MB）。图片按比例铺满页面宽度，点击后在新窗口打开链接。</p>
+            <form id="banner-form">
+              <label><input id="banner-enabled" type="checkbox" /> 开启 Banner</label>
+              <label>跳转链接（HTTPS）<input id="banner-link" type="url" maxlength="2048" placeholder="https://" /></label>
+              <label>替换图片<input id="banner-file" type="file" accept="image/png,image/jpeg" /></label>
+              <img id="banner-preview" alt="Banner 图片预览" hidden />
+              <div><button type="submit" id="banner-save" disabled>保存配置</button> <button type="button" id="banner-reload">重新加载</button></div>
+              <p id="banner-message" role="status" aria-live="polite">等待加载</p>
+              <p id="banner-clicks"></p>
+            </form>
+          </section>
         </section>
       </section>
     </main>
 
     <script src="./admin-navigation.js?v=1.0.0" defer></script>
     <script src="./admin.js?v=1.5.0" defer></script>
-    <link rel="stylesheet" href="./admin-banner.css?v=1" />
-    <script src="./admin-banner.js?v=1" defer></script>
+    <link rel="stylesheet" href="./admin-banner.css?v=2" />
+    <script src="./admin-banner.js?v=2" defer></script>
   </body>
 </html>

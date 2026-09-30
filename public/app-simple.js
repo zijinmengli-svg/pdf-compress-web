@@ -17,7 +17,8 @@ const submitButton   = document.getElementById("submit-button");
 const downloadRow    = document.getElementById("download-row");
 const downloadButton = document.getElementById("download-button");
 
-const i18n = window.TinyPDFI18n.createTranslator(document.documentElement.lang);
+let i18n = window.TinyPDFI18n.createTranslator(document.documentElement.lang);
+let lastUiState = null;
 const t = (key, vars) => i18n.text(key, vars);
 
 // Runtime configuration from /api/config, with defaults before initialization.
@@ -171,7 +172,19 @@ function localizeStateMessage(message) {
 }
 
 function setStatus(state) {
+  lastUiState = state;
+  const uiProgress = state.status === 'done' ? 1 : Math.min(.99, Math.max(0, Number(state.progress) || 0));
+  statusCard.dataset.progress = String(uiProgress);
+  statusCard.classList.toggle('has-progress', !['done', 'error'].includes(state.status) && uiProgress > 0);
+  statusCard.dispatchEvent(new CustomEvent('compression-progress', {detail: uiProgress}));
   statusCard.hidden = false;
+  document.querySelector('.panel').classList.toggle('is-busy', !['done', 'error'].includes(state.status));
+  document.querySelector('.panel').classList.toggle('has-result', ['done', 'error'].includes(state.status));
+  statusCard.classList.toggle('is-error', state.status === 'error');
+  const iconPercent = document.getElementById('icon-percent');
+  if (iconPercent) iconPercent.textContent = state.status === 'error' ? '!' : `${Math.floor(uiProgress * 100)}%`;
+  const statusFilename = document.getElementById('status-filename');
+  if (statusFilename) statusFilename.textContent = fileInput.files?.[0]?.name || '';
   statusTitle.textContent =
     state.status === "done"  ? t("statusComplete") :
     state.status === "error" ? t("statusFailed") : t("statusProcessing");
@@ -184,7 +197,8 @@ function setStatus(state) {
   }
   statusMessage.textContent  = msg;
   setMetrics(state);
-  downloadRow.hidden = state.status !== "done";
+  downloadRow.hidden = !['done', 'error'].includes(state.status);
+  downloadButton.hidden = state.status !== 'done';
 }
 
 function validateFile(file) {
@@ -207,12 +221,18 @@ function validateTarget(file) {
 }
 
 function updateFileState(file) {
+  const uploadIcon = document.getElementById('upload-icon');
+  const dropTitle = document.querySelector('.drop-title');
+  dropzone.classList.toggle('has-file', Boolean(file));
+  if (uploadIcon) uploadIcon.src = file ? '/assets/sketch/selected.png' : '/assets/sketch/upload.png';
+  if (dropTitle && uploadIcon) dropTitle.textContent = file ? file.name : (i18n.language === 'zh-CN' ? '上传 PDF 文件' : 'Upload a PDF');
   if (!file) {
     fileMeta.textContent = t("uploadPrompt");
     showError(fileError, "");
     return;
   }
   fileMeta.textContent = `${file.name} · ${formatMB(file.size)}`;
+  if (uploadIcon) fileMeta.textContent = `${i18n.language === 'zh-CN' ? '当前文件大小' : 'The current file size is'} ${formatMB(file.size)}`;
   showError(fileError, validateFile(file));
   const signature = `${file.name}:${file.size}:${file.lastModified || 0}`;
   if (signature !== lastTrackedFileSignature) {
@@ -386,6 +406,17 @@ targetInput.addEventListener("input", () => {
 
 downloadButton.addEventListener("click", startDownload);
 
+document.getElementById('retry-button')?.addEventListener('click', () => {
+  if (activeEvents) activeEvents.close();
+  activeEvents = null;
+  activeJobId = null;
+  activeJobAccessToken = '';
+  statusCard.hidden = true;
+  document.querySelector('.panel').classList.remove('is-busy', 'has-result');
+  resetSubmitButton();
+  targetInput.focus();
+});
+
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
 
@@ -458,3 +489,12 @@ async function initConfig() {
 submitButton.textContent = t("compressButton");
 downloadButton.textContent = t("downloadButton");
 const configReady = initConfig();
+document.addEventListener('tinypdf-language', () => {
+  i18n = window.TinyPDFI18n.createTranslator(document.documentElement.lang);
+  submitButton.textContent = t(submitButton.disabled ? 'compressing' : 'compressButton');
+  downloadButton.textContent = t('downloadButton');
+  qualityWarning.textContent = t('qualityWarning');
+  updateFileState(fileInput.files?.[0]);
+  checkQualityWarning();
+  if (!statusCard.hidden && lastUiState) setStatus(lastUiState);
+});

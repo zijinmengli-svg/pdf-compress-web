@@ -1,6 +1,9 @@
 .site-banner{position:relative;width:100%;background:#121212;isolation:isolate;line-height:0;z-index:50}
 .site-banner>a{display:block;width:100%}
-.site-banner img{display:block;width:100%;height:auto;aspect-ratio:40 / 1}
+.site-banner img{display:block;width:100%;height:auto;aspect-ratio:48 / 1}
 .site-banner-close{position:absolute;right:8px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font:24px/1 Arial;cursor:pointer;min-height:0}
 .site-banner-close:focus-visible{outline:2px solid white;outline-offset:2px}
+.sketch-ui .site-banner{position:fixed;inset:0 0 auto;z-index:30}
+.sketch-ui .site-banner-close{width:28px;height:28px;min-height:28px;padding:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font:24px/1 Arial;transform:translateY(-50%)}
+.sketch-ui .site-banner-close:hover:not(:disabled){transform:translateY(-50%)}
 @media(max-width:767px){.site-banner{min-height:32px;display:flex;align-items:center}.site-banner-close{right:2px}}

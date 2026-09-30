@@ -120,7 +120,7 @@ async function startServer() {
       const response = await get("/");
       assert.strictEqual(response.status, 200);
       assert.match(response.body, /<html lang="en">/);
-      assert.match(response.body, /Compress a PDF to a target file size/);
+      assert.match(response.body, /Compress a PDF to the exact file size you need/);
       assert.match(response.body, /does not provide a public compression API/i);
       assert.match(response.body, /href="\/zh\/"/);
       assert.match(response.body, /<link rel="canonical" href="https:\/\/tinypdf\.cn\/"\s*\/>/);

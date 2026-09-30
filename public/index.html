@@ -17,6 +17,7 @@
     <meta name="twitter:description" content="Compress one PDF toward the target file size you need." />
     <title>TinyPDF Target Size PDF Compressor | Free Online Tool</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/sketch-ui.css?v=2" />
     <link rel="canonical" href="https://tinypdf.cn/" />
     <link rel="alternate" hreflang="zh-CN" href="https://tinypdf.cn/zh/" />
     <link rel="alternate" hreflang="en" href="https://tinypdf.cn/" />
@@ -29,12 +30,14 @@
       gtag('config', 'G-EGP898J99G', { transport_url: 'https://analytics.tinypdf.cn' });
     </script>
   </head>
-  <body>
+  <body class="sketch-ui">
+    <!-- Presentation slot only. Rewards remain disabled; the local demo reveals it. -->
     <main class="shell">
       <header class="topbar">
-        <span class="eyebrow">TinyPDF</span>
+        <a href="/" class="brand"><img src="/assets/sketch/TinyPDF@2x.png" alt="TinyPDF" width="96" height="24" /></a>
         <div class="topbar-actions">
-          <a class="language-link" href="/zh/" lang="zh-CN" hreflang="zh-CN">中文</a>
+          <span class="quota-preview" title="Visual preview only; usage limits are not enabled">3 compressions left</span>
+          <details class="language-menu"><summary>English</summary><nav><a href="/" aria-current="page">English</a><a href="/zh/" lang="zh-CN" hreflang="zh-CN">中文</a></nav></details>
           <div class="usage-bar">
             <span class="usage-badge" id="usage-display" aria-live="polite">Free · No account required · One file up to 100MB</span>
           </div>
@@ -43,10 +46,9 @@
 
       <section class="hero">
         <h1 class="product-title">
-          <span class="product-name">TinyPDF</span>
-          <span class="product-descriptor">Target Size PDF Compressor</span>
+          <span>Your PDF, Your size.</span>
         </h1>
-        <h2 class="hero-sub">Compress a PDF to a target file size</h2>
+        <h2 class="hero-sub">Compress a PDF to the exact file size you need.</h2>
         <p class="lead">Enter the size you need in MB. TinyPDF will try to get as close as possible while preserving page count, page dimensions, and layout.</p>
       </section>
 
@@ -56,6 +58,7 @@
         <form id="compress-form" class="form" novalidate>
           <label class="dropzone" id="dropzone" for="pdf">
             <input id="pdf" name="pdf" type="file" accept="application/pdf" required />
+            <img class="upload-icon" id="upload-icon" src="/assets/sketch/upload.png" alt="" width="100" height="100" />
             <span class="drop-title">Upload a PDF</span>
             <span class="drop-meta" id="file-meta">Drag a file here, or click to choose one</span>
           </label>
@@ -81,6 +84,8 @@
         </form>
 
         <section class="status-card" id="status-card" hidden>
+          <div class="status-icon"><img src="/assets/sketch/processing.png" alt="" width="140" height="140" /><span id="icon-percent">0%</span></div>
+          <p id="status-filename"></p>
           <div class="status-header">
             <span id="status-title">Preparing</span>
             <span id="status-percent">0%</span>
@@ -88,9 +93,10 @@
           <div class="progress-track">
             <div class="progress-fill" id="progress-fill"></div>
           </div>
-          <p id="status-message">Waiting for the job to start</p>
+          <p id="status-message" role="status">Waiting for the job to start</p>
           <dl class="metrics" id="metrics"></dl>
           <div class="action-row" id="download-row" hidden>
+            <button id="retry-button" type="button">Retry</button>
             <button id="download-button" type="button">Download compressed PDF</button>
           </div>
         </section>
@@ -121,11 +127,12 @@
       </div>
     </footer>
 
-    <link rel="stylesheet" href="/site-banner.css?v=1" />
-    <script src="/site-banner.js?v=1" defer></script>
     <script src="/ad-slot.js?v=1.3.0" defer></script>
     <script src="/i18n.js?v=1.0.0" defer></script>
     <script src="/web-request.js?v=1.0.0" defer></script>
-    <script src="/app-simple.js?v=1.5.1" defer></script>
-  </body>
+    <script src="/app-simple.js?v=2.0.0" defer></script>
+    <script src="/sketch-ui.js?v=2.1.0" defer></script>
+  <link rel="stylesheet" href="/site-banner.css?v=2" />
+<script src="/site-banner.js?v=2" defer></script>
+</body>
 </html>

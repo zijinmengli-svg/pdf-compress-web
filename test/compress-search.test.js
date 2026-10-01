@@ -66,6 +66,18 @@ async function test(name, fn) {
     assert.ok(r.bytes <= 20e6);
   });
 
+  await test("searchBestConfig 复用已测得的质量地板，不重复压缩同一档", async () => {
+    const measured = [];
+    const oracle = makeOracle({ base: 6e6, nativeDpi: 130 });
+    const probe = async (qf, cap) => {
+      measured.push(`${qf}:${cap}`);
+      return oracle(qf, cap);
+    };
+    const result = await searchBestConfig(probe, 20e6, COMPRESS);
+    assert.ok(result);
+    assert.strictEqual(measured.filter(key => key === `${COMPRESS.QF_FLOOR}:600`).length, 1);
+  });
+
   // searchBestConfig：高清文件全分辨率塞不下 → 沿阶梯下降取最高可行 cap。
   await test("searchBestConfig 高清文件取最高可行分辨率", async () => {
     const probe = makeOracle({ base: 6e6, nativeDpi: 600 });

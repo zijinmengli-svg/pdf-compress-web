@@ -7,7 +7,7 @@ const fsp = fs.promises;
 const http = require("http");
 const os = require("os");
 const path = require("path");
-const { spawn } = require("child_process");
+const { spawn, execFileSync } = require("child_process");
 const { createWebSession, requestTokenFor } = require("../lib/web-session");
 
 const ROOT = path.join(__dirname, "..");
@@ -28,11 +28,13 @@ function request(options, body) {
 }
 
 function makePaddedPdf(bytes) {
+  const content = "BT /F1 12 Tf 10 36 Td (TinyPDF) Tj ET";
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
     "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Resources << >> /Contents 4 0 R >>",
-    "<< /Length 0 >>\nstream\n\nendstream",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
   ];
   let pdf = "%PDF-1.4\n";
   const offsets = [0];
@@ -109,9 +111,13 @@ function waitForFinalState(jobId, accessToken, cookie) {
 
 (async () => {
   const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "tinypdf-regression-"));
+  const actualGs = execFileSync("which", ["gs"]).toString().trim();
+  const gsTrace = path.join(tempDir, "gs-pdfwrite-runs.txt");
+  const gsWrapper = path.join(tempDir, "gs");
+  await fsp.writeFile(gsWrapper, '#!/bin/sh\ncase "$*" in *-sDEVICE=pdfwrite*) printf "x\\n" >> "$GS_TRACE_FILE";; esac\nexec "$REAL_GS" "$@"\n', { mode: 0o755 });
   const child = spawn(process.execPath, ["server-simple.js"], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(PORT), WEB_SESSION_SECRET: SESSION_SECRET, ADMIN_SESSION_SECRET: "admin-session-secret" },
+    env: { ...process.env, PORT: String(PORT), WEB_SESSION_SECRET: SESSION_SECRET, ADMIN_SESSION_SECRET: "admin-session-secret", PATH: `${tempDir}${path.delimiter}${process.env.PATH}`, REAL_GS: actualGs, GS_TRACE_FILE: gsTrace },
     stdio: ["ignore", "ignore", "pipe"],
   });
 
@@ -156,6 +162,12 @@ function waitForFinalState(jobId, accessToken, cookie) {
     });
     assert.strictEqual(download.statusCode, 200, "a completed highly-compressible PDF must download");
     assert.ok(download.body.subarray(0, 5).equals(Buffer.from("%PDF-")));
+    const downloadedPath = path.join(tempDir, "compressed-text.pdf");
+    await fsp.writeFile(downloadedPath, download.body);
+    const extractedText = execFileSync(actualGs, ["-q", "-dBATCH", "-dNOPAUSE", "-sDEVICE=txtwrite", "-sOutputFile=-", downloadedPath]).toString("utf8");
+    assert.match(extractedText, /TinyPDF/, "compression should preserve searchable text");
+    const gsRuns = (await fsp.readFile(gsTrace, "utf8")).trim().split("\n").length;
+    assert.strictEqual(gsRuns, 2, "reuse the successful probe output instead of recompressing the final PDF");
     console.log("compression regression test passed");
   } finally {
     child.kill("SIGTERM");

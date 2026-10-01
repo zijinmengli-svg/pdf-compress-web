@@ -578,6 +578,7 @@ async function runGsQf(inputPath, outputPath, qf, resCap, signal, timeoutMs = GS
 async function vectorCompressSearch(jobId, job, inputPath, scratchBase, targetBytes, minValidBytes, signal, timeoutMs = GS_TIMEOUT_MS) {
   let step = 0;
   const scratch = `${scratchBase}.probe.tmp`;
+  let savedConfig = null;
   const probe = async (qf, resCap) => {
     job.state.progress = Math.min(0.8, 0.12 + step * 0.05);
     job.state.message  = "Searching for the clearest version that fits the target size...";
@@ -591,14 +592,28 @@ async function vectorCompressSearch(jobId, job, inputPath, scratchBase, targetBy
       return null;
     }
     let st; try { st = await fsp.stat(scratch); } catch { return null; }
-    try { fs.unlinkSync(scratch); } catch {}
     if (st.size < minValidBytes) {
       console.error("compression_probe_rejected", { jobId, phase: "vector_probe", outputBytes: st.size, minValidBytes });
+      try { fs.unlinkSync(scratch); } catch {}
       return null;
+    }
+    if (st.size <= targetBytes) {
+      // A passing probe is already the exact PDF we would render again later.
+      // Search visits better quality candidates after the floor, so retain the
+      // latest passing candidate and avoid a full extra Ghostscript run.
+      await fsp.rename(scratch, scratchBase);
+      savedConfig = { qf, resCap, bytes: st.size };
+    } else {
+      try { fs.unlinkSync(scratch); } catch {}
     }
     return st.size;
   };
-  return await searchBestConfig(probe, targetBytes, COMPRESS);
+  const config = await searchBestConfig(probe, targetBytes, COMPRESS);
+  return config && {
+    ...config,
+    reusedOutput: savedConfig !== null &&
+      savedConfig.qf === config.qf && savedConfig.resCap === config.resCap && savedConfig.bytes === config.bytes,
+  };
 }
 
 function generateJobId() {
@@ -716,7 +731,9 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
       try {
         const cfg = await vectorCompressSearch(jobId, job, inputPath, outputPath, targetBytes, MIN_VALID_BYTES, controller.signal, jobGsTimeoutMs);
         if (cfg) {
-          await runGsQf(inputPath, outputPath, cfg.qf, cfg.resCap, controller.signal, jobGsTimeoutMs); // 用选定配置渲染最终输出
+          if (!cfg.reusedOutput) {
+            await runGsQf(inputPath, outputPath, cfg.qf, cfg.resCap, controller.signal, jobGsTimeoutMs);
+          }
           const st = await fsp.stat(outputPath);
           if (st.size <= targetBytes && st.size >= MIN_VALID_BYTES) {
             resultBytes    = st.size;

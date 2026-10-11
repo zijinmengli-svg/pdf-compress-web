@@ -94,6 +94,60 @@ async function test(name, fn) {
     assert.strictEqual(r, null, "目标过小、连兜底都超 → null");
   });
 
+  await test("large aggressive jobs accept one valid near-target fast probe", async () => {
+    const calls = [];
+    const probe = async (qf, cap) => { calls.push([qf, cap]); return 19 * 1024 * 1024; };
+    const result = await searchBestConfig(probe, 20 * 1024 * 1024, COMPRESS, {
+      originalBytes: 60 * 1024 * 1024,
+      validateFastPass: async () => true,
+    });
+    assert.deepStrictEqual(result, { qf: 0.2, resCap: 72, bytes: 19 * 1024 * 1024 });
+    assert.deepStrictEqual(calls, [[0.2, 72]], "successful fast path should need one full-file probe");
+  });
+
+  await test("fast probe too small falls back to quality-first search", async () => {
+    const calls = [];
+    const oracle = makeOracle({ base: 6e6, nativeDpi: 130 });
+    const probe = async (qf, cap) => {
+      calls.push([qf, cap]);
+      return qf === 0.2 && cap === 72 ? 10 * 1024 * 1024 : oracle(qf, cap);
+    };
+    const result = await searchBestConfig(probe, 20 * 1024 * 1024, COMPRESS, {
+      originalBytes: 60 * 1024 * 1024,
+      validateFastPass: async () => true,
+    });
+    assert.deepStrictEqual(calls[0], [0.2, 72]);
+    assert.deepStrictEqual(calls[1], [COMPRESS.QF_FLOOR, 600]);
+    assert.strictEqual(result.resCap, 600);
+  });
+
+  await test("invalid fast output falls back to quality-first search", async () => {
+    const calls = [];
+    const probe = async (qf, cap) => {
+      calls.push([qf, cap]);
+      return 19 * 1024 * 1024;
+    };
+    await searchBestConfig(probe, 20 * 1024 * 1024, COMPRESS, {
+      originalBytes: 60 * 1024 * 1024,
+      validateFastPass: async () => false,
+    });
+    assert.deepStrictEqual(calls[0], [0.2, 72]);
+    assert.deepStrictEqual(calls[1], [COMPRESS.QF_FLOOR, 600]);
+  });
+
+  await test("small or gently compressed files keep the original search order", async () => {
+    const cases = [[39, 10], [60, 21]];
+    for (const [originalMB, targetMB] of cases) {
+      const calls = [];
+      const probe = async (qf, cap) => { calls.push([qf, cap]); return 1; };
+      await searchBestConfig(probe, targetMB * 1024 * 1024, COMPRESS, {
+        originalBytes: originalMB * 1024 * 1024,
+        validateFastPass: async () => true,
+      });
+      assert.deepStrictEqual(calls[0], [COMPRESS.QF_FLOOR, 600]);
+    }
+  });
+
   console.log(`\nSUMMARY: ${passed}/${passed + failed} passed`);
   process.exit(failed === 0 ? 0 : 1);
 })();

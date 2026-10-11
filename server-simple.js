@@ -575,7 +575,7 @@ async function runGsQf(inputPath, outputPath, qf, resCap, signal, timeoutMs = GS
 // 分辨率优先的矢量压缩搜索：构造真实 Ghostscript probe，交由纯函数 searchBestConfig 选最优
 // (分辨率,质量) 配置。probe 即用即删探测临时文件，返回字节数或 null。
 // 返回 { qf, resCap, bytes }(≤target) 或 null（交由栅格化兜底）。不落地最终文件，由调用方按配置渲染。
-async function vectorCompressSearch(jobId, job, inputPath, scratchBase, targetBytes, minValidBytes, signal, timeoutMs = GS_TIMEOUT_MS) {
+async function vectorCompressSearch(jobId, job, inputPath, scratchBase, targetBytes, originalBytes, minValidBytes, signal, timeoutMs = GS_TIMEOUT_MS) {
   let step = 0;
   const scratch = `${scratchBase}.probe.tmp`;
   let savedConfig = null;
@@ -608,7 +608,24 @@ async function vectorCompressSearch(jobId, job, inputPath, scratchBase, targetBy
     }
     return st.size;
   };
-  const config = await searchBestConfig(probe, targetBytes, COMPRESS);
+  const config = await searchBestConfig(probe, targetBytes, COMPRESS, {
+    originalBytes,
+    validateFastPass: async () => {
+      try {
+        const info = await checkPdf(scratchBase);
+        if (!info.valid || info.encrypted) return false;
+        const stat = await fsp.stat(scratchBase);
+        const fd = await fsp.open(scratchBase, "r");
+        try {
+          const tail = Buffer.alloc(Math.min(1024, stat.size));
+          await fd.read(tail, 0, tail.length, stat.size - tail.length);
+          return tail.toString("latin1").includes("%%EOF");
+        } finally {
+          await fd.close();
+        }
+      } catch { return false; }
+    },
+  });
   return config && {
     ...config,
     reusedOutput: savedConfig !== null &&
@@ -729,7 +746,7 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     if (resultBytes === null) {
       job.state.phase = "vector_search";
       try {
-        const cfg = await vectorCompressSearch(jobId, job, inputPath, outputPath, targetBytes, MIN_VALID_BYTES, controller.signal, jobGsTimeoutMs);
+        const cfg = await vectorCompressSearch(jobId, job, inputPath, outputPath, targetBytes, originalBytes, MIN_VALID_BYTES, controller.signal, jobGsTimeoutMs);
         if (cfg) {
           if (!cfg.reusedOutput) {
             await runGsQf(inputPath, outputPath, cfg.qf, cfg.resCap, controller.signal, jobGsTimeoutMs);

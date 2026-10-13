@@ -191,7 +191,9 @@ function setStatus(state) {
   const percent = Math.round((state.progress || 0) * 100);
   statusPercent.textContent = `${percent}%`;
   progressFill.style.width  = `${percent}%`;
-  let msg = localizeStateMessage(state.error || state.message || "");
+  let msg = state.errorCode === "TARGET_RANGE_TOO_SMALL" ? t("targetRangeTooSmall") :
+    state.errorCode === "TARGET_RANGE_TOO_LARGE" ? t("targetRangeTooLarge") :
+    localizeStateMessage(state.error || state.message || "");
   if (state.status === "done" && state.rasterized) {
     msg += (msg ? " " : "") + t("rasterizedNote");
   }

@@ -52,9 +52,9 @@ function makePaddedPdf(bytes) {
   return Buffer.concat([document, Buffer.alloc(bytes - document.length)]);
 }
 
-function multipart(pdf, boundary) {
+function multipart(pdf, boundary, targetMB = 1) {
   const opening = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="pdf"; filename="highly-compressible.pdf"\r\nContent-Type: application/pdf\r\n\r\n`);
-  const target = Buffer.from(`\r\n--${boundary}\r\nContent-Disposition: form-data; name="targetMB"\r\n\r\n1\r\n--${boundary}\r\nContent-Disposition: form-data; name="landingLanguage"\r\n\r\nen\r\n--${boundary}--\r\n`);
+  const target = Buffer.from(`\r\n--${boundary}\r\nContent-Disposition: form-data; name="targetMB"\r\n\r\n${targetMB}\r\n--${boundary}\r\nContent-Disposition: form-data; name="landingLanguage"\r\n\r\nen\r\n--${boundary}--\r\n`);
   return Buffer.concat([opening, pdf, target]);
 }
 
@@ -117,7 +117,7 @@ function waitForFinalState(jobId, accessToken, cookie) {
   await fsp.writeFile(gsWrapper, '#!/bin/sh\ncase "$*" in *-sDEVICE=pdfwrite*) printf "x\\n" >> "$GS_TRACE_FILE";; esac\nexec "$REAL_GS" "$@"\n', { mode: 0o755 });
   const child = spawn(process.execPath, ["server-simple.js"], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(PORT), WEB_SESSION_SECRET: SESSION_SECRET, ADMIN_SESSION_SECRET: "admin-session-secret", PATH: `${tempDir}${path.delimiter}${process.env.PATH}`, REAL_GS: actualGs, GS_TRACE_FILE: gsTrace },
+    env: { ...process.env, PORT: String(PORT), WEB_SESSION_SECRET: SESSION_SECRET, ADMIN_SESSION_SECRET: "admin-session-secret", ANALYTICS_FILE: path.join(tempDir, "analytics-events.jsonl"), PATH: `${tempDir}${path.delimiter}${process.env.PATH}`, REAL_GS: actualGs, GS_TRACE_FILE: gsTrace },
     stdio: ["ignore", "ignore", "pipe"],
   });
 
@@ -146,8 +146,8 @@ function waitForFinalState(jobId, accessToken, cookie) {
     assert.strictEqual(response.statusCode, 200);
     const job = JSON.parse(response.body.toString("utf8"));
     const finalState = await waitForFinalState(job.id, job.accessToken, cookie);
-    assert.strictEqual(finalState.status, "done", "a valid result smaller than 1% of the input must remain downloadable");
-    assert.ok(finalState.resultBytes > 0);
+    assert.strictEqual(finalState.status, "error", "a tiny but valid PDF cannot be marked successful for a 1 MiB target");
+    assert.strictEqual(finalState.errorCode, "TARGET_RANGE_TOO_SMALL");
     const download = await request({
       hostname: "127.0.0.1",
       port: PORT,
@@ -160,14 +160,79 @@ function waitForFinalState(jobId, accessToken, cookie) {
         Referer: `http://127.0.0.1:${PORT}/`,
       },
     });
-    assert.strictEqual(download.statusCode, 200, "a completed highly-compressible PDF must download");
-    assert.ok(download.body.subarray(0, 5).equals(Buffer.from("%PDF-")));
-    const downloadedPath = path.join(tempDir, "compressed-text.pdf");
-    await fsp.writeFile(downloadedPath, download.body);
-    const extractedText = execFileSync(actualGs, ["-q", "-dBATCH", "-dNOPAUSE", "-sDEVICE=txtwrite", "-sOutputFile=-", downloadedPath]).toString("utf8");
-    assert.match(extractedText, /TinyPDF/, "compression should preserve searchable text");
-    const gsRuns = (await fsp.readFile(gsTrace, "utf8")).trim().split("\n").length;
-    assert.strictEqual(gsRuns, 2, "reuse the successful probe output instead of recompressing the final PDF");
+    assert.notStrictEqual(download.statusCode, 200, "out-of-window results must not be downloadable as a success");
+
+    const undersizedBoundary = `----TinyPDF${crypto.randomBytes(8).toString("hex")}`;
+    const undersizedBody = multipart(makePaddedPdf(6 * 1024 * 1024), undersizedBoundary, 5);
+    const undersizedResponse = await request({
+      hostname: "127.0.0.1",
+      port: PORT,
+      path: "/api/jobs",
+      method: "POST",
+      headers: {
+        Cookie: cookie,
+        "User-Agent": "Mozilla/5.0",
+        "Sec-Fetch-Site": "same-origin",
+        Origin: `http://127.0.0.1:${PORT}`,
+        Referer: `http://127.0.0.1:${PORT}/`,
+        "X-TinyPDF-Web-Token": requestTokenFor(session.value, SESSION_SECRET),
+        "Content-Type": `multipart/form-data; boundary=${undersizedBoundary}`,
+        "Content-Length": undersizedBody.length,
+      },
+    }, undersizedBody);
+    assert.strictEqual(undersizedResponse.statusCode, 200);
+    const undersizedJob = JSON.parse(undersizedResponse.body.toString("utf8"));
+    const undersizedState = await waitForFinalState(undersizedJob.id, undersizedJob.accessToken, cookie);
+    assert.strictEqual(undersizedState.status, "error", "a 2 MB result must not count as a successful 5 MB result");
+    assert.strictEqual(undersizedState.errorCode, "TARGET_RANGE_TOO_SMALL");
+
+    const smallBoundary = `----TinyPDF${crypto.randomBytes(8).toString("hex")}`;
+    const smallBody = multipart(makePaddedPdf(2 * 1024 * 1024), smallBoundary, 1.5);
+    const smallResponse = await request({
+      hostname: "127.0.0.1",
+      port: PORT,
+      path: "/api/jobs",
+      method: "POST",
+      headers: {
+        Cookie: cookie,
+        "User-Agent": "Mozilla/5.0",
+        "Sec-Fetch-Site": "same-origin",
+        Origin: `http://127.0.0.1:${PORT}`,
+        Referer: `http://127.0.0.1:${PORT}/`,
+        "X-TinyPDF-Web-Token": requestTokenFor(session.value, SESSION_SECRET),
+        "Content-Type": `multipart/form-data; boundary=${smallBoundary}`,
+        "Content-Length": smallBody.length,
+      },
+    }, smallBody);
+    assert.strictEqual(smallResponse.statusCode, 200);
+    const smallJob = JSON.parse(smallResponse.body.toString("utf8"));
+    const smallState = await waitForFinalState(smallJob.id, smallJob.accessToken, cookie);
+    assert.strictEqual(smallState.status, "error", "an output below 90% of a sub-2-MiB target must not count as success");
+    assert.strictEqual(smallState.errorCode, "TARGET_RANGE_TOO_SMALL");
+
+    const impossibleBoundary = `----TinyPDF${crypto.randomBytes(8).toString("hex")}`;
+    const impossibleBody = multipart(makePaddedPdf(2 * 1024 * 1024), impossibleBoundary, 0.0001);
+    const impossibleResponse = await request({
+      hostname: "127.0.0.1",
+      port: PORT,
+      path: "/api/jobs",
+      method: "POST",
+      headers: {
+        Cookie: cookie,
+        "User-Agent": "Mozilla/5.0",
+        "Sec-Fetch-Site": "same-origin",
+        Origin: `http://127.0.0.1:${PORT}`,
+        Referer: `http://127.0.0.1:${PORT}/`,
+        "X-TinyPDF-Web-Token": requestTokenFor(session.value, SESSION_SECRET),
+        "Content-Type": `multipart/form-data; boundary=${impossibleBoundary}`,
+        "Content-Length": impossibleBody.length,
+      },
+    }, impossibleBody);
+    assert.strictEqual(impossibleResponse.statusCode, 200);
+    const impossibleJob = JSON.parse(impossibleResponse.body.toString("utf8"));
+    const impossibleState = await waitForFinalState(impossibleJob.id, impossibleJob.accessToken, cookie);
+    assert.strictEqual(impossibleState.status, "error", "a result above the requested maximum must not count as success");
+    assert.strictEqual(impossibleState.errorCode, "TARGET_RANGE_TOO_LARGE");
     console.log("compression regression test passed");
   } finally {
     child.kill("SIGTERM");

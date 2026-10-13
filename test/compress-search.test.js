@@ -1,6 +1,6 @@
 "use strict";
 const assert = require("assert");
-const { COMPRESS, qfBracket, searchBestConfig } = require("../lib/compress-search");
+const { COMPRESS, qfBracket, searchBestConfig, targetWindowFloor } = require("../lib/compress-search");
 
 // 合成体积模型：体积随 qf 减小而增大(∝ qf^-0.5)、随有效分辨率^2 增大；
 // 有效分辨率 = min(cap, nativeDpi) —— 模拟"绝不上采样"。
@@ -20,6 +20,24 @@ async function test(name, fn) {
 }
 
 (async () => {
+  await test("target size windows use 90% below 2 MiB and one MiB below otherwise", async () => {
+    const mib = 1024 * 1024;
+    assert.strictEqual(targetWindowFloor(0.8 * mib), Math.ceil(0.72 * mib));
+    assert.strictEqual(targetWindowFloor(1.5 * mib), Math.ceil(1.35 * mib));
+    assert.strictEqual(targetWindowFloor(2 * mib - 1), Math.ceil((2 * mib - 1) * 0.9));
+    assert.strictEqual(targetWindowFloor(2 * mib), mib);
+    assert.strictEqual(targetWindowFloor(5 * mib), 4 * mib);
+  });
+
+  await test("1.5 MiB target seeks higher fidelity instead of accepting a 0.7 MiB result", async () => {
+    const mib = 1024 * 1024;
+    const probe = async (qf) => Math.round(0.7 * mib * Math.pow(0.02 / qf, 0.35));
+    const result = await searchBestConfig(probe, 1.5 * mib, COMPRESS);
+    assert.ok(result);
+    assert.ok(result.bytes >= targetWindowFloor(1.5 * mib) && result.bytes <= 1.5 * mib);
+    assert.ok(result.qf < COMPRESS.QF_BEST);
+  });
+
   // qfBracket：低清文件(native 130)，目标 20e6，全分辨率(cap 600→eff 130)下质量地板可达标。
   await test("qfBracket 命中目标内、贴下沿、保住分辨率", async () => {
     const probe = makeOracle({ base: 6e6, nativeDpi: 130 });
@@ -94,6 +112,16 @@ async function test(name, fn) {
     assert.strictEqual(r, null, "目标过小、连兜底都超 → null");
   });
 
+  await test("5 MB target searches above the old quality ceiling when 2.2 MB is unnecessarily small", async () => {
+    const mib = 1024 * 1024;
+    const probe = async (qf) => Math.round(2.2 * mib * Math.pow(0.02 / qf, 0.35));
+    const result = await searchBestConfig(probe, 5 * mib, COMPRESS);
+    assert.ok(result, "a higher-fidelity candidate should be found");
+    assert.ok(result.bytes >= 4 * mib && result.bytes <= 5 * mib,
+      `result ${result.bytes} must be between 4 and 5 MiB`);
+    assert.ok(result.qf < COMPRESS.QF_BEST, "the search must try better image fidelity than its old ceiling");
+  });
+
   await test("large aggressive jobs accept one valid near-target fast probe", async () => {
     const calls = [];
     const probe = async (qf, cap) => { calls.push([qf, cap]); return 19 * 1024 * 1024; };
@@ -119,6 +147,21 @@ async function test(name, fn) {
     assert.deepStrictEqual(calls[0], [0.2, 72]);
     assert.deepStrictEqual(calls[1], [COMPRESS.QF_FLOOR, 600]);
     assert.strictEqual(result.resCap, 600);
+  });
+
+  await test("20 MB fast probe at 18.5 MB does not bypass the one-MiB window", async () => {
+    const mib = 1024 * 1024;
+    const calls = [];
+    const probe = async (qf, cap) => {
+      calls.push([qf, cap]);
+      return qf === 0.2 && cap === 72 ? 18.5 * mib : 19.5 * mib;
+    };
+    const result = await searchBestConfig(probe, 20 * mib, COMPRESS, {
+      originalBytes: 60 * mib,
+      validateFastPass: async () => true,
+    });
+    assert.ok(calls.length > 1, "an undersized fast probe must continue searching");
+    assert.ok(result.bytes >= 19 * mib && result.bytes <= 20 * mib);
   });
 
   await test("invalid fast output falls back to quality-first search", async () => {

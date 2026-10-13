@@ -7,7 +7,7 @@ const os = require("os");
 const crypto = require("crypto");
 const { execFileSync } = require("child_process");
 const { URL } = require("url");
-const { COMPRESS, searchBestConfig } = require("./lib/compress-search");
+const { COMPRESS, searchBestConfig, targetWindowFloor } = require("./lib/compress-search");
 const { runCommand } = require("./lib/process-runner");
 const { makeCompressedDownloadName } = require("./lib/download-name");
 const { chooseAnalyticsFile } = require("./lib/analytics-path");
@@ -805,6 +805,20 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
 
     if (resultBytes === null) throw new Error("Compression failed. Please try again.");
 
+    // A valid but very small PDF is not a successful exact-size result. In
+    // particular, pdfwrite can discard redundant source data without losing
+    // visible quality; padding that output to the requested size would be fake.
+    if (originalBytes > targetBytes && resultBytes < targetWindowFloor(targetBytes)) {
+      const error = new Error("The clearest PDF is smaller than the requested size range. Adding empty data would not improve its quality.");
+      error.code = "TARGET_RANGE_TOO_SMALL";
+      throw error;
+    }
+    if (resultBytes > targetBytes) {
+      const error = new Error("This PDF cannot be compressed below the requested maximum size without making it unusable.");
+      error.code = "TARGET_RANGE_TOO_LARGE";
+      throw error;
+    }
+
     const reachedTarget    = resultBytes <= targetBytes;
     const noCompressNeeded = resultBytes >= originalBytes; // 已回退原文件：目标 ≥ 原文件
     job.state.progress     = 1;
@@ -849,12 +863,15 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
   } catch (error) {
     const timedOut = error && ["ETIMEDOUT", "ABORT_ERR"].includes(error.code);
     const reason = String(error && error.message || "Compression failed");
-    console.error("compression_failed", { jobId, error: reason, code: timedOut ? "COMPRESSION_TIMEOUT" : "COMPRESSION_ERROR" });
+    const errorCode = timedOut ? "COMPRESSION_TIMEOUT" :
+      error && ["TARGET_RANGE_TOO_SMALL", "TARGET_RANGE_TOO_LARGE"].includes(error.code)
+        ? error.code : "COMPRESSION_ERROR";
+    console.error("compression_failed", { jobId, error: reason, code: errorCode });
     job.state.status   = "error";
     job.state.progress = 1;
     job.state.message  = "Compression failed";
     job.state.error    = reason;
-    job.state.errorCode = timedOut ? "COMPRESSION_TIMEOUT" : "COMPRESSION_ERROR";
+    job.state.errorCode = errorCode;
     sendEvent(jobId, job.state);
     sendGaEvent(job.gaClientId, "compress_error", { reason: reason.slice(0, 100), code: job.state.errorCode });
     analyticsStore.append({

@@ -17,6 +17,10 @@ assert.strictEqual(zh.text("compressButton"), "开始压缩");
 assert.strictEqual(en.text("compressButton"), "Compress PDF");
 assert.strictEqual(zh.text("websiteSessionRequired"), "请刷新 TinyPDF 页面后重试。");
 assert.strictEqual(en.text("websiteSessionRequired"), "Please refresh TinyPDF and try again.");
+assert.match(zh.text("targetRangeTooSmall"), /最高保真.*空白数据/);
+assert.match(en.text("targetRangeTooSmall"), /highest fidelity.*empty data/i);
+assert.match(zh.text("targetRangeTooLarge"), /无法.*目标/);
+assert.match(en.text("targetRangeTooLarge"), /cannot.*target/i);
 assert.strictEqual(
   zh.text("uploadLimit", { max: 100 }),
   "免费使用 · 无需注册 · 单个文件最高 100MB"

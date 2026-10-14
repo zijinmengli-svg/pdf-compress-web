@@ -1878,6 +1878,11 @@ body.admin-page {
   color: #b42318;
 }
 
+.status-tag.is-below_range {
+  background: #fff3df;
+  color: #8a5600;
+}
+
 .status-tag.is-processing,
 .status-tag.is-slow,
 .status-tag.is-pending,

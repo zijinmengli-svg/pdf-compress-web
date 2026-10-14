@@ -1,9 +1,42 @@
 "use strict";
 
 const assert = require("assert");
-const { mergeRecentFileEvents } = require("../lib/analytics");
+const { mergeRecentFileEvents, summarizeAnalytics } = require("../lib/analytics");
 
 const MB = 1024 * 1024;
+
+{
+  const rows = mergeRecentFileEvents([
+    {
+      ts: "2026-10-14T03:00:00.000Z",
+      event: "compress_started",
+      sessionId: "below-range-session",
+      data: { fileName: "scanned.pdf", originalBytes: 40 * MB, targetMB: 10, jobId: "below-range-job" },
+    },
+    {
+      ts: "2026-10-14T03:01:00.000Z",
+      event: "compress_below_range",
+      sessionId: "below-range-session",
+      data: { fileName: "scanned.pdf", originalBytes: 40 * MB, targetMB: 10, resultBytes: 5 * MB, jobId: "below-range-job" },
+    },
+    {
+      ts: "2026-10-14T03:02:00.000Z",
+      event: "download_clicked",
+      sessionId: "below-range-session",
+      data: { fileName: "scanned.pdf", resultBytes: 5 * MB, outcome: "below_range", jobId: "below-range-job" },
+    },
+  ], new Date("2026-10-14T03:05:00.000Z"));
+  assert.strictEqual(rows.length, 1);
+  assert.strictEqual(rows[0].status, "below_range", "download must not relabel an undersized candidate as exact-size success");
+  assert.strictEqual(rows[0].resultBytes, 5 * MB);
+  const summary = summarizeAnalytics([
+    { ts: "2026-10-14T03:00:00.000Z", event: "compress_started", sessionId: "below-range-session", data: { fileName: "scanned.pdf", jobId: "below-range-job" } },
+    { ts: "2026-10-14T03:01:00.000Z", event: "compress_below_range", sessionId: "below-range-session", data: { fileName: "scanned.pdf", jobId: "below-range-job", resultBytes: 5 * MB } },
+  ], new Date("2026-10-14T03:05:00.000Z"));
+  assert.strictEqual(summary.funnel.compress_success, 0, "below-range must not inflate exact-size successes");
+  assert.strictEqual(summary.compression.belowRangeCount, 1, "below-range candidates should have their own count");
+  assert.strictEqual(summary.overview.successRate7d, 0, "exact-size success rate must include below-range outcomes in its denominator");
+}
 
 {
   const rows = mergeRecentFileEvents([

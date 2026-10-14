@@ -55,7 +55,7 @@
 .sketch-ui #status-filename{font-size:16px;margin:18px 0 60px;line-height:22px;overflow-wrap:anywhere}
 .sketch-ui .status-header,.sketch-ui .progress-track{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden}
 .sketch-ui #status-message{margin:12px 0;color:#b8c7c6;font-size:14px}
-.sketch-ui .status-card:not(.is-error) #status-message{position:absolute;clip-path:inset(50%);height:1px;width:1px;overflow:hidden}
+.sketch-ui .status-card:not(.is-error):not(.is-below-range) #status-message{position:absolute;clip-path:inset(50%);height:1px;width:1px;overflow:hidden}
 .sketch-ui .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:0;text-align:left}
 .sketch-ui .metrics div{min-height:100px;padding:22px 24px 18px;border:1px solid #54737b;border-radius:18px;background:#21282a}
 .sketch-ui .metrics dt{font-size:16px;line-height:20px;color:#999;letter-spacing:0;text-transform:none}

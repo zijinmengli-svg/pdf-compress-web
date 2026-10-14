@@ -163,6 +163,7 @@ function localizeStateMessage(message) {
     "Applying stronger compression": "applyingStrongerCompression",
     "Searching for the clearest version that fits the target size...": "searchingClearest",
     "Compression complete": "statusComplete",
+    "A usable PDF was generated below the requested size range. Download it at its actual size.": "belowRangeMessage",
     "Compression failed": "statusFailed",
     "The original file is already no larger than the target size": "originalAlreadySmall",
     "The file has limited room for compression. This is the smallest usable result we could produce.": "limitedCompression",
@@ -173,20 +174,23 @@ function localizeStateMessage(message) {
 
 function setStatus(state) {
   lastUiState = state;
-  const uiProgress = state.status === 'done' ? 1 : Math.min(.99, Math.max(0, Number(state.progress) || 0));
+  const terminal = ['done', 'below_range', 'error'].includes(state.status);
+  const uiProgress = ['done', 'below_range'].includes(state.status) ? 1 : Math.min(.99, Math.max(0, Number(state.progress) || 0));
   statusCard.dataset.progress = String(uiProgress);
-  statusCard.classList.toggle('has-progress', !['done', 'error'].includes(state.status) && uiProgress > 0);
+  statusCard.classList.toggle('has-progress', !terminal && uiProgress > 0);
   statusCard.dispatchEvent(new CustomEvent('compression-progress', {detail: uiProgress}));
   statusCard.hidden = false;
-  document.querySelector('.panel').classList.toggle('is-busy', !['done', 'error'].includes(state.status));
-  document.querySelector('.panel').classList.toggle('has-result', ['done', 'error'].includes(state.status));
+  document.querySelector('.panel').classList.toggle('is-busy', !terminal);
+  document.querySelector('.panel').classList.toggle('has-result', terminal);
   statusCard.classList.toggle('is-error', state.status === 'error');
+  statusCard.classList.toggle('is-below-range', state.status === 'below_range');
   const iconPercent = document.getElementById('icon-percent');
   if (iconPercent) iconPercent.textContent = state.status === 'error' ? '!' : `${Math.floor(uiProgress * 100)}%`;
   const statusFilename = document.getElementById('status-filename');
   if (statusFilename) statusFilename.textContent = fileInput.files?.[0]?.name || '';
   statusTitle.textContent =
     state.status === "done"  ? t("statusComplete") :
+    state.status === "below_range" ? t("statusBelowRange") :
     state.status === "error" ? t("statusFailed") : t("statusProcessing");
   const percent = Math.round((state.progress || 0) * 100);
   statusPercent.textContent = `${percent}%`;
@@ -194,13 +198,13 @@ function setStatus(state) {
   let msg = state.errorCode === "TARGET_RANGE_TOO_SMALL" ? t("targetRangeTooSmall") :
     state.errorCode === "TARGET_RANGE_TOO_LARGE" ? t("targetRangeTooLarge") :
     localizeStateMessage(state.error || state.message || "");
-  if (state.status === "done" && state.rasterized) {
+  if (['done', 'below_range'].includes(state.status) && state.rasterized) {
     msg += (msg ? " " : "") + t("rasterizedNote");
   }
   statusMessage.textContent  = msg;
   setMetrics(state);
-  downloadRow.hidden = !['done', 'error'].includes(state.status);
-  downloadButton.hidden = state.status !== 'done';
+  downloadRow.hidden = !terminal;
+  downloadButton.hidden = !['done', 'below_range'].includes(state.status);
 }
 
 function validateFile(file) {
@@ -294,7 +298,7 @@ async function submitCompression(body) {
     const state = JSON.parse(message.data);
     activeDownloadName = state.downloadName || activeDownloadName;
     setStatus(state);
-    if (state.status === "done" || state.status === "error") {
+    if (["done", "below_range", "error"].includes(state.status)) {
       activeEvents.close();
       activeEvents = null;
       resetSubmitButton();

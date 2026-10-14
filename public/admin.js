@@ -101,6 +101,7 @@ function eventLabel(value) {
     file_selected: "选择文件",
     compress_started: "开始压缩",
     compress_success: "压缩成功",
+    compress_below_range: "生成更小文件（未命中目标）",
     compress_error: "压缩失败",
     download_clicked: "点击下载",
     banner_clicked: "点击顶部 Banner",
@@ -130,6 +131,7 @@ function deviceLabel(value) {
 function statusLabel(value) {
   const labels = {
     success: "成功",
+    below_range: "可下载·未命中目标",
     error: "失败",
     processing: "处理中",
     slow: "耗时处理中",
@@ -317,6 +319,7 @@ function renderCompression(summary) {
       <span>平均耗时</span><strong>${summary.behavior.averageCompressionSeconds || 0} 秒</strong>
       <span>平均节省</span><strong>${summary.compression.averageSavingsRate || 0}%</strong>
       <span>错误任务</span><strong>${formatNumber(errors)}</strong>
+      <span>生成更小文件（未命中目标）</span><strong>${formatNumber(summary.compression.belowRangeCount || 0)}</strong>
     </div>
   `;
 }

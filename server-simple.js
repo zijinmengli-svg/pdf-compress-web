@@ -805,25 +805,25 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
 
     if (resultBytes === null) throw new Error("Compression failed. Please try again.");
 
-    // A valid but very small PDF is not a successful exact-size result. In
-    // particular, pdfwrite can discard redundant source data without losing
-    // visible quality; padding that output to the requested size would be fake.
-    if (originalBytes > targetBytes && resultBytes < targetWindowFloor(targetBytes)) {
-      const error = new Error("The clearest PDF is smaller than the requested size range. Adding empty data would not improve its quality.");
-      error.code = "TARGET_RANGE_TOO_SMALL";
-      throw error;
-    }
     if (resultBytes > targetBytes) {
       const error = new Error("This PDF cannot be compressed below the requested maximum size without making it unusable.");
       error.code = "TARGET_RANGE_TOO_LARGE";
       throw error;
     }
 
+    // Keep a usable undersized PDF available, but never count it as an
+    // exact-size success or pad it with meaningless bytes.
+    const belowRange = originalBytes > targetBytes && resultBytes < targetWindowFloor(targetBytes);
+    if (belowRange && !(await checkPdf(outputPath)).valid) {
+      throw new Error("The compressed PDF is invalid. Please try again.");
+    }
     const reachedTarget    = resultBytes <= targetBytes;
     const noCompressNeeded = resultBytes >= originalBytes; // 已回退原文件：目标 ≥ 原文件
     job.state.progress     = 1;
-    job.state.status       = "done";
-    job.state.message      = noCompressNeeded
+    job.state.status       = belowRange ? "below_range" : "done";
+    job.state.message      = belowRange
+      ? "A usable PDF was generated below the requested size range. Download it at its actual size."
+      : noCompressNeeded
       ? "The original file is already no larger than the target size"
       : reachedTarget
         ? "Compression complete"
@@ -833,8 +833,8 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     job.state.downloadName = downloadName;
     sendEvent(jobId, job.state);
 
-    // 服务端 GA 上报：压缩完成（真实用户行为，最可靠的业务数据）
-    sendGaEvent(job.gaClientId, "compress_complete", {
+    // 目标区间未命中须与精准成功分开上报。
+    sendGaEvent(job.gaClientId, belowRange ? "compress_below_range" : "compress_complete", {
       original_mb:    bytesToMB(originalBytes),
       target_mb:      bytesToMB(targetBytes),
       result_mb:      bytesToMB(resultBytes),
@@ -843,7 +843,7 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
       rasterized:     job.state.rasterized ? 1 : 0,
     });
     analyticsStore.append({
-      event: "compress_success",
+      event: belowRange ? "compress_below_range" : "compress_success",
       ...(job.analyticsMeta || {}),
       data: {
         fileName: job.originalName,
@@ -1265,7 +1265,7 @@ async function handleApiRequest(req, res, url) {
   if (url.pathname.startsWith("/api/jobs/") && url.pathname.endsWith("/download")) {
     const jobId = url.pathname.slice("/api/jobs/".length, -"/download".length);
     const job = jobs.get(jobId);
-    if (!job || job.state.status !== "done") {
+    if (!job || !["done", "below_range"].includes(job.state.status)) {
       sendError(res, 404, "NOT_FOUND", "File not found");
       return;
     }
@@ -1294,6 +1294,7 @@ async function handleApiRequest(req, res, url) {
         targetMB: job.targetMB || "",
         targetBytes: job.state.targetBytes || job.targetBytes || "",
         resultBytes: job.state.resultBytes || stat.size,
+        outcome: job.state.status,
         jobId,
         uploadAttemptId: job.uploadAttemptId || "",
       },

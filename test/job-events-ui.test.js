@@ -92,6 +92,18 @@ async function run() {
   assert.strictEqual(getNode("download-row").hidden, false);
   assert.strictEqual(getNode("download-button").hidden, false);
   assert.strictEqual(source.closed, true, "terminal events should close the stream");
+  await vm.runInContext("submitCompression(new FormData())", context);
+  const belowRangeSource = FakeEventSource.instances[1];
+  belowRangeSource.emit({
+    status: "below_range", progress: 1, resultBytes: 2 * 1024 * 1024,
+    originalBytes: 11 * 1024 * 1024, targetBytes: 5 * 1024 * 1024,
+    ratio: 2 / 11, downloadName: "example-compressed.pdf",
+    message: "A usable PDF was generated below the requested size range. Download it at its actual size.",
+  });
+  assert.strictEqual(getNode("status-title").textContent, "statusBelowRange");
+  assert.strictEqual(getNode("status-message").textContent, "belowRangeMessage");
+  assert.strictEqual(getNode("download-button").hidden, false, "below-range output should be downloadable");
+  assert.strictEqual(belowRangeSource.closed, true, "below-range is a terminal state");
   console.log("PASS - compression reaches download state after a transient stream error");
 }
 

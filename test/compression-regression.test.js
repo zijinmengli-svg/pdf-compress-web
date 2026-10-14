@@ -96,7 +96,7 @@ function waitForFinalState(jobId, accessToken, cookie) {
           const data = event.split("\n").find((line) => line.startsWith("data: "));
           if (!data) continue;
           const state = JSON.parse(data.slice(6));
-          if (state.status === "done" || state.status === "error") {
+          if (["done", "below_range", "error"].includes(state.status)) {
             req.destroy();
             resolve(state);
             return;
@@ -109,15 +109,28 @@ function waitForFinalState(jobId, accessToken, cookie) {
   });
 }
 
+async function waitForAnalyticsEvent(filePath, jobId, eventName) {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const contents = await fsp.readFile(filePath, "utf8").catch(() => "");
+    const match = contents.split("\n").filter(Boolean).map(line => JSON.parse(line))
+      .find(event => event.event === eventName && event.data?.jobId === jobId);
+    if (match) return match;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  throw new Error(`missing ${eventName} analytics for ${jobId}`);
+}
+
 (async () => {
   const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "tinypdf-regression-"));
   const actualGs = execFileSync("which", ["gs"]).toString().trim();
   const gsTrace = path.join(tempDir, "gs-pdfwrite-runs.txt");
   const gsWrapper = path.join(tempDir, "gs");
   await fsp.writeFile(gsWrapper, '#!/bin/sh\ncase "$*" in *-sDEVICE=pdfwrite*) printf "x\\n" >> "$GS_TRACE_FILE";; esac\nexec "$REAL_GS" "$@"\n', { mode: 0o755 });
+  const analyticsFile = path.join(tempDir, "analytics-events.jsonl");
   const child = spawn(process.execPath, ["server-simple.js"], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(PORT), WEB_SESSION_SECRET: SESSION_SECRET, ADMIN_SESSION_SECRET: "admin-session-secret", ANALYTICS_FILE: path.join(tempDir, "analytics-events.jsonl"), PATH: `${tempDir}${path.delimiter}${process.env.PATH}`, REAL_GS: actualGs, GS_TRACE_FILE: gsTrace },
+    env: { ...process.env, PORT: String(PORT), WEB_SESSION_SECRET: SESSION_SECRET, ADMIN_SESSION_SECRET: "admin-session-secret", ANALYTICS_FILE: analyticsFile, PATH: `${tempDir}${path.delimiter}${process.env.PATH}`, REAL_GS: actualGs, GS_TRACE_FILE: gsTrace },
     stdio: ["ignore", "ignore", "pipe"],
   });
 
@@ -146,8 +159,8 @@ function waitForFinalState(jobId, accessToken, cookie) {
     assert.strictEqual(response.statusCode, 200);
     const job = JSON.parse(response.body.toString("utf8"));
     const finalState = await waitForFinalState(job.id, job.accessToken, cookie);
-    assert.strictEqual(finalState.status, "error", "a tiny but valid PDF cannot be marked successful for a 1 MiB target");
-    assert.strictEqual(finalState.errorCode, "TARGET_RANGE_TOO_SMALL");
+    assert.strictEqual(finalState.status, "below_range", "a tiny but valid PDF should remain downloadable without counting as an exact-size success");
+    assert(finalState.resultBytes > 0 && finalState.resultBytes < 0.9 * 1024 * 1024);
     const download = await request({
       hostname: "127.0.0.1",
       port: PORT,
@@ -160,7 +173,15 @@ function waitForFinalState(jobId, accessToken, cookie) {
         Referer: `http://127.0.0.1:${PORT}/`,
       },
     });
-    assert.notStrictEqual(download.statusCode, 200, "out-of-window results must not be downloadable as a success");
+    assert.strictEqual(download.statusCode, 200, "a valid below-range result should be downloadable");
+    assert(download.body.subarray(0, 5).equals(Buffer.from("%PDF-")));
+    assert.strictEqual(download.body.length, finalState.resultBytes);
+    const candidateEvent = await waitForAnalyticsEvent(analyticsFile, job.id, "compress_below_range");
+    assert.strictEqual(candidateEvent.data.resultBytes, finalState.resultBytes);
+    const analyticsContents = await fsp.readFile(analyticsFile, "utf8");
+    assert(!analyticsContents.split("\n").filter(Boolean).map(line => JSON.parse(line))
+      .some(event => event.data?.jobId === job.id && ["compress_success", "compress_error"].includes(event.event)),
+    "a downloadable below-range result must not be logged as success or error");
 
     const undersizedBoundary = `----TinyPDF${crypto.randomBytes(8).toString("hex")}`;
     const undersizedBody = multipart(makePaddedPdf(6 * 1024 * 1024), undersizedBoundary, 5);
@@ -183,8 +204,8 @@ function waitForFinalState(jobId, accessToken, cookie) {
     assert.strictEqual(undersizedResponse.statusCode, 200);
     const undersizedJob = JSON.parse(undersizedResponse.body.toString("utf8"));
     const undersizedState = await waitForFinalState(undersizedJob.id, undersizedJob.accessToken, cookie);
-    assert.strictEqual(undersizedState.status, "error", "a 2 MB result must not count as a successful 5 MB result");
-    assert.strictEqual(undersizedState.errorCode, "TARGET_RANGE_TOO_SMALL");
+    assert.strictEqual(undersizedState.status, "below_range", "a 2 MB result must not count as a successful 5 MB result");
+    assert(undersizedState.resultBytes < 4 * 1024 * 1024);
 
     const smallBoundary = `----TinyPDF${crypto.randomBytes(8).toString("hex")}`;
     const smallBody = multipart(makePaddedPdf(2 * 1024 * 1024), smallBoundary, 1.5);
@@ -207,8 +228,7 @@ function waitForFinalState(jobId, accessToken, cookie) {
     assert.strictEqual(smallResponse.statusCode, 200);
     const smallJob = JSON.parse(smallResponse.body.toString("utf8"));
     const smallState = await waitForFinalState(smallJob.id, smallJob.accessToken, cookie);
-    assert.strictEqual(smallState.status, "error", "an output below 90% of a sub-2-MiB target must not count as success");
-    assert.strictEqual(smallState.errorCode, "TARGET_RANGE_TOO_SMALL");
+    assert.strictEqual(smallState.status, "below_range", "an output below 90% of a sub-2-MiB target remains available but is not exact-size success");
 
     const impossibleBoundary = `----TinyPDF${crypto.randomBytes(8).toString("hex")}`;
     const impossibleBody = multipart(makePaddedPdf(2 * 1024 * 1024), impossibleBoundary, 0.0001);

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Compress a PDF exported from Figma while keeping UI labels, component states, and case-study screens inspectable. Start with a 10MB target." />
+    <meta name="robots" content="index, follow" />
+    <meta property="og:title" content="Compress a Figma PDF Export | TinyPDF" />
+    <meta property="og:description" content="A Figma-specific PDF workflow for portfolios, handoffs, and presentation decks with strict upload limits." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://tinypdf.cn/compress-figma-pdf" />
+    <title>Compress a Figma PDF Export Without Losing UI Detail | TinyPDF</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/site-banner.css?v=2" />
+    <link rel="canonical" href="https://tinypdf.cn/compress-figma-pdf" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar"><a href="/" class="eyebrow">TinyPDF</a><a class="language-link" href="/zh/">中文</a></header>
+      <section class="hero">
+        <h1 class="product-title">Compress a PDF Exported from Figma</h1>
+        <p class="lead">Shrink a case study, prototype walkthrough, or design handoff after Figma creates a PDF larger than the destination accepts.</p>
+        <p class="target-guidance"><strong>Practical starting point:</strong> use 10MB for a short visual case study. A longer deck with many screenshots may need 20MB or a smaller selection of frames.</p>
+        <p class="quality-caveat"><strong>Figma caveat:</strong> blurred shadows, image fills, and large device screenshots consume far more space than vectors. Tiny labels can soften when the target is pushed too low.</p>
+      </section>
+      <section class="panel">
+        <div class="config-row" id="config-bar"></div>
+        <form id="compress-form" class="form" novalidate>
+          <label class="dropzone" id="dropzone" for="pdf"><input id="pdf" name="pdf" type="file" accept="application/pdf" required /><span class="drop-title">Upload a Figma PDF export</span><span class="drop-meta" id="file-meta">Drag a file here, or click to choose one</span></label>
+          <p class="field-error" id="file-error" hidden></p>
+          <label class="field"><span>Target size</span><div class="inline-field"><input id="targetMB" name="targetMB" type="number" min="0.1" step="0.1" value="10" required /><span class="suffix">MB</span></div><div class="quality-warning" id="quality-warning" hidden>This target may soften screenshots and effects.</div></label>
+          <p class="field-error" id="target-error" hidden></p>
+          <div class="action-row"><button id="submit-button" type="submit">Compress Figma PDF</button></div>
+        </form>
+        <section class="status-card" id="status-card" hidden><div class="status-header"><span id="status-title">Preparing</span><span id="status-percent">0%</span></div><div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div><p id="status-message" role="status">Waiting for the job to start</p><dl class="metrics" id="metrics"></dl><div class="action-row" id="download-row" hidden><button id="retry-button" type="button">Retry</button><button id="download-button" type="button">Download compressed PDF</button></div></section>
+        <aside class="processing-note"><strong>Temporary processing</strong><p>The export and compressed result are deleted after about one hour.</p></aside>
+      </section>
+      <section class="panel landing-copy">
+        <h2 class="landing-h2">Prepare frames before exporting</h2>
+        <p>Figma exports every selected top-level frame as a PDF page. A hidden alternative, duplicate iteration, or oversized mood board can add megabytes without helping the reader. Export only the frames that belong in the final narrative.</p>
+        <ul><li>Flatten decorative image effects when editability is not required.</li><li>Crop image fills to the visible area instead of keeping large unused originals.</li><li>Avoid placing a full-resolution screenshot inside a small device frame.</li></ul>
+      </section>
+      <section class="panel landing-copy">
+        <h2 class="landing-h2">Inspect the result like a reviewer</h2>
+        <p>Open the downloaded PDF at normal reading size, then zoom into one dense screen. Check 12px labels, thin dividers, charts, and contrast on tinted backgrounds. If these fail, raise the target or return to Figma and simplify the heaviest pages.</p>
+      </section>
+      <nav class="panel landing-sizes related-tools" aria-label="Related PDF tools"><h2 class="landing-h2">Related tools</h2><div class="footer-links"><a href="/compress-portfolio-pdf">Compress a design portfolio</a><a href="/compress-pdf-without-losing-quality">Protect PDF quality</a><a href="/compress-pdf-to-10mb">Compress to 10MB</a></div></nav>
+      <div id="ad-slot-main" class="ad-slot" hidden></div>
+    </main>
+    <footer class="site-footer"><div class="footer-inner"><strong>TinyPDF</strong><nav class="footer-links"><a href="/">Home</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/faq">FAQ</a></nav></div></footer>
+    <script src="/ad-slot.js?v=1.3.0" defer></script><script src="/i18n.js?v=1.0.1" defer></script><script src="/web-request.js?v=1.0.0" defer></script><script src="/app-simple.js?v=2.0.1" defer></script><script src="/site-banner.js?v=2" defer></script>
+  </body>
+</html>

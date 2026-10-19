@@ -14,6 +14,13 @@ const PAGES = [
   { path: "/compress-pdf-to-10mb", target: "10" },
   { path: "/compress-pdf-to-20mb", target: "20" },
 ];
+const INTENT_PAGES = [
+  { path: "/compress-portfolio-pdf", target: "10" },
+  { path: "/compress-pdf-for-job-application", target: "5" },
+  { path: "/compress-figma-pdf", target: "10" },
+  { path: "/compress-pdf-for-email", target: "20" },
+  { path: "/compress-pdf-without-losing-quality", target: "20" },
+];
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -66,6 +73,20 @@ function countMatches(value, pattern) {
   return [...value.matchAll(pattern)].length;
 }
 
+function visibleWords(html) {
+  return new Set(html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .toLowerCase()
+    .match(/[a-z]{4,}/g) || []);
+}
+
+function jaccard(left, right) {
+  const overlap = [...left].filter(word => right.has(word)).length;
+  return overlap / new Set([...left, ...right]).size;
+}
+
 (async () => {
   const server = await startServer();
 
@@ -105,7 +126,47 @@ function countMatches(value, pattern) {
       assert.match(llms.body, new RegExp(`https://tinypdf\\.cn${page.path}`));
     }
 
-    console.log("PASS - five target-size pages are crawlable, usable, and internally discoverable");
+    const intentDocuments = [];
+    for (const page of INTENT_PAGES) {
+      const response = await get(page.path);
+      assert.strictEqual(response.status, 200, `${page.path} must return 200`);
+      assert.strictEqual(countMatches(response.body, /<title>[^<]+<\/title>/g), 1);
+      assert.strictEqual(countMatches(response.body, /<h1\b[^>]*>/g), 1);
+      assert.strictEqual(countMatches(response.body, /<meta\s+name="description"\s+content="[^"]+"/g), 1);
+      assert.match(response.body, new RegExp(`<link\\s+rel="canonical"\\s+href="https://tinypdf\\.cn${page.path}"`));
+      assert.match(response.body, /<meta\s+name="robots"\s+content="index, follow"/);
+      assert.match(response.body, /<form\s+id="compress-form"/);
+      assert.match(response.body, new RegExp(`<input\\s+id="targetMB"[^>]+value="${page.target}"`));
+      assert.match(response.body, /class="[^"]*target-guidance[^"]*"/);
+      assert.match(response.body, /class="[^"]*quality-caveat[^"]*"/);
+      assert.match(response.body, /<nav\s+class="[^"]*related-tools[^"]*"/);
+      assert.ok(countMatches(response.body, /<a\s+href="\/compress-[^"]+"/g) >= 2, `${page.path} needs related tool links`);
+      assert.match(homepage.body, new RegExp(`href="${page.path}"`));
+      assert.match(sitemap.body, new RegExp(`<loc>https://tinypdf\\.cn${page.path}</loc>`));
+
+      intentDocuments.push({
+        path: page.path,
+        title: response.body.match(/<title>([^<]+)<\/title>/)[1],
+        h1: response.body.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/)[1].replace(/<[^>]+>/g, " ").trim(),
+        description: response.body.match(/<meta\s+name="description"\s+content="([^"]+)"/)[1],
+        words: visibleWords(response.body),
+      });
+    }
+
+    assert.strictEqual(new Set(intentDocuments.map(page => page.title)).size, INTENT_PAGES.length, "intent titles must be unique");
+    assert.strictEqual(new Set(intentDocuments.map(page => page.h1)).size, INTENT_PAGES.length, "intent H1s must be unique");
+    assert.strictEqual(new Set(intentDocuments.map(page => page.description)).size, INTENT_PAGES.length, "intent descriptions must be unique");
+    for (let left = 0; left < intentDocuments.length; left++) {
+      for (let right = left + 1; right < intentDocuments.length; right++) {
+        const similarity = jaccard(intentDocuments[left].words, intentDocuments[right].words);
+        assert.ok(
+          similarity < 0.72,
+          `${intentDocuments[left].path} and ${intentDocuments[right].path} repeat too much text (${similarity.toFixed(2)})`
+        );
+      }
+    }
+
+    console.log("PASS - ten search landing pages are crawlable, usable, unique, and internally discoverable");
   } finally {
     server.kill("SIGKILL");
   }

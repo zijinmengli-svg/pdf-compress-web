@@ -142,3 +142,26 @@
 .sketch-ui .landing-sizes .footer-links a{color:#1fcbb5}
 .sketch-ui .landing-sizes .footer-links{justify-content:flex-start}
 @media(max-width:600px){.sketch-ui .target-guidance,.sketch-ui .quality-caveat,.sketch-ui .muted-text{padding-inline:16px}.sketch-ui .landing-copy,.sketch-ui .landing-sizes{margin-top:48px;padding-bottom:32px}.sketch-ui .product-descriptor{font-size:15px;line-height:22px}}
+
+.sketch-ui .portfolio-guide{width:calc(100% - 48px);max-width:1000px;margin:88px auto 0;color:#e8eeee}
+.sketch-ui .guide-heading{border-top:1px solid #3a4c4d;padding:32px 0 30px}
+.sketch-ui .guide-eyebrow,.sketch-ui .guide-index{margin:0 0 16px;color:#31c7b6;font-size:12px;font-weight:700;line-height:18px}
+.sketch-ui .guide-heading h2{margin:0;color:#f1f4f4;font-size:28px;line-height:36px;font-weight:600}
+.sketch-ui .guide-heading>p:last-child{max-width:690px;margin:14px 0 0;color:#aeb8ba;font-size:16px;line-height:26px}
+.sketch-ui .guide-highlights{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:40px;border-top:1px solid #303638;padding:26px 0 38px}
+.sketch-ui .guide-highlights p.target-guidance,.sketch-ui .guide-highlights p.quality-caveat{max-width:none;margin:0;padding:0;color:#aeb8ba;font-size:15px;line-height:24px}
+.sketch-ui .guide-highlights strong{display:block;margin-bottom:8px;color:#e8eeee;font-size:16px;line-height:22px}
+.sketch-ui .guide-highlights p.quality-caveat{border-left:1px solid #303638;padding-left:40px}
+.sketch-ui .guide-section{display:grid;grid-template-columns:minmax(0,280px) minmax(0,1fr);gap:48px;border-top:1px solid #303638;padding:36px 0 40px}
+.sketch-ui .guide-section h3,.sketch-ui .guide-related h3{margin:0;color:#e8eeee;font-size:20px;line-height:28px;font-weight:600}
+.sketch-ui .guide-section p:not(.guide-index),.sketch-ui .guide-section li{color:#aeb8ba;font-size:15px;line-height:25px}
+.sketch-ui .guide-section p:not(.guide-index){margin:0 0 14px}
+.sketch-ui .guide-section ul,.sketch-ui .guide-section ol{margin:0;padding-left:20px}
+.sketch-ui .guide-section li+li{margin-top:10px}
+.sketch-ui .guide-section strong{color:#e8eeee}
+.sketch-ui .guide-related{display:flex;align-items:baseline;gap:32px;flex-wrap:wrap;border-top:1px solid #303638;border-bottom:1px solid #303638;padding:27px 0 31px}
+.sketch-ui .guide-related h3{font-size:16px;line-height:24px}
+.sketch-ui .guide-links{display:flex;flex-wrap:wrap;gap:12px 28px}
+.sketch-ui .guide-links a{color:#31c7b6;text-decoration:none;font-size:15px;line-height:24px}
+.sketch-ui .guide-links a:hover{text-decoration:underline}
+@media(max-width:600px){.sketch-ui .portfolio-guide{width:calc(100% - 32px);margin-top:58px}.sketch-ui .guide-heading h2{font-size:23px;line-height:31px}.sketch-ui .guide-highlights{grid-template-columns:1fr;gap:22px}.sketch-ui .guide-highlights p.quality-caveat{border-left:0;border-top:1px solid #303638;padding:22px 0 0}.sketch-ui .guide-section{grid-template-columns:1fr;gap:18px;padding:28px 0 34px}.sketch-ui .guide-index{margin-bottom:8px}.sketch-ui .guide-related{gap:12px}}

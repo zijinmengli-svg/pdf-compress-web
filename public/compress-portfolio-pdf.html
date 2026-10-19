@@ -11,45 +11,56 @@
     <meta property="og:url" content="https://tinypdf.cn/compress-portfolio-pdf" />
     <title>Compress a Design Portfolio PDF for Applications | TinyPDF</title>
     <link rel="stylesheet" href="/styles.css" />
-    <link rel="stylesheet" href="/sketch-ui.css?v=2" />
+    <link rel="stylesheet" href="/sketch-ui.css?v=3" />
     <link rel="stylesheet" href="/site-banner.css?v=2" />
     <link rel="canonical" href="https://tinypdf.cn/compress-portfolio-pdf" />
+    <link rel="alternate" hreflang="en" href="https://tinypdf.cn/compress-portfolio-pdf" />
+    <link rel="alternate" hreflang="zh-CN" href="https://tinypdf.cn/zh/compress-portfolio-pdf" />
+    <link rel="alternate" hreflang="x-default" href="https://tinypdf.cn/compress-portfolio-pdf" />
   </head>
   <body class="sketch-ui">
     <main class="shell">
-      <header class="topbar"><a href="/" class="brand"><img src="/assets/sketch/TinyPDF@2x.png" alt="TinyPDF" width="96" height="24" /></a><div class="topbar-actions"><span class="quota-preview">Free PDF compression</span><details class="language-menu"><summary>English</summary><nav><a href="/" aria-current="page">English</a><a href="/zh/">中文</a></nav></details><div class="usage-bar"><span class="usage-badge" id="usage-display" aria-live="polite"></span></div></div></header>
+      <header class="topbar"><a href="/" class="brand"><img src="/assets/sketch/TinyPDF@2x.png" alt="TinyPDF" width="96" height="24" /></a><div class="topbar-actions"><span class="quota-preview" title="Visual preview only; usage limits are not enabled">3 compressions left</span><details class="language-menu"><summary>English</summary><nav><a href="/compress-portfolio-pdf" aria-current="page">English</a><a href="/zh/compress-portfolio-pdf" lang="zh-CN" hreflang="zh-CN">中文</a></nav></details><div class="usage-bar"><span class="usage-badge" id="usage-display" aria-live="polite"></span></div></div></header>
       <section class="hero">
-        <h1 class="product-title">Compress a Design Portfolio PDF</h1>
-        <h2 class="hero-sub">Keep project images and typography ready for review.</h2>
-        <p class="lead">Reduce a portfolio for an application form without treating every page like an ordinary office document.</p>
-        <p class="target-guidance"><strong>Practical starting point:</strong> try 10MB first. If the portal allows more, use the largest accepted size so project photography and interface details stay easier to judge.</p>
-        <p class="quality-caveat"><strong>Quality note:</strong> image-heavy architecture, graphic design, and UI portfolios may not remain presentation-ready at very small targets. Always inspect type, captions, and full-bleed images after download.</p>
+        <h1 class="product-title"><span>Your PDF, Your size.</span></h1>
+        <h2 class="hero-sub">Compress a PDF to the exact file size you need.</h2>
+        <p class="lead">Enter the size you need in MB. TinyPDF will try to get as close as possible while preserving page count, page dimensions, and layout.</p>
       </section>
       <section class="panel">
         <div class="config-row" id="config-bar"></div>
         <form id="compress-form" class="form" novalidate>
-          <label class="dropzone" id="dropzone" for="pdf"><input id="pdf" name="pdf" type="file" accept="application/pdf" required /><img class="upload-icon" id="upload-icon" src="/assets/sketch/upload.png" alt="" width="100" height="100" /><span class="drop-title">Upload your portfolio PDF</span><span class="drop-meta" id="file-meta">Drag a file here, or click to choose one</span></label>
+          <label class="dropzone" id="dropzone" for="pdf"><input id="pdf" name="pdf" type="file" accept="application/pdf" required /><img class="upload-icon" id="upload-icon" src="/assets/sketch/upload.png" alt="" width="100" height="100" /><span class="drop-title">Upload a PDF</span><span class="drop-meta" id="file-meta">Drag a file here, or click to choose one</span></label>
           <p class="field-error" id="file-error" hidden></p>
           <label class="field"><span>Target size</span><div class="inline-field"><input id="targetMB" name="targetMB" type="number" min="0.1" step="0.1" value="10" required /><span class="suffix">MB</span></div><div class="quality-warning" id="quality-warning" hidden>This target may reduce image quality.</div></label>
           <p class="field-error" id="target-error" hidden></p>
-          <div class="action-row"><button id="submit-button" type="submit">Compress portfolio</button></div>
+          <div class="action-row"><button id="submit-button" type="submit">Compress PDF</button></div>
         </form>
         <section class="status-card" id="status-card" hidden><div class="status-icon"><img src="/assets/sketch/processing.png" alt="" width="140" height="140" /><span id="icon-percent">0%</span></div><p id="status-filename"></p><div class="status-header"><span id="status-title">Preparing</span><span id="status-percent">0%</span></div><div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div><p id="status-message" role="status">Waiting for the job to start</p><dl class="metrics" id="metrics"></dl><div class="action-row" id="download-row" hidden><button id="retry-button" type="button">Retry</button><button id="download-button" type="button">Download compressed PDF</button></div></section>
         <aside class="processing-note"><strong>File processing</strong><p>Files are temporary and deleted after about one hour. No account is required.</p></aside>
       </section>
-      <section class="panel landing-copy">
-        <h2 class="landing-h2">Protect the pages reviewers actually study</h2>
-        <p>Recruiters often skim a portfolio before opening individual projects. Keep the cover, contents, project title pages, and strongest outcome images crisp. If the file is still too large, remove duplicate process shots before lowering quality across every page.</p>
-        <ul><li><strong>UI and product design:</strong> check small labels, component states, and device mockups at 100% zoom.</li><li><strong>Graphic design:</strong> watch gradients, fine linework, and text placed over photographs.</li><li><strong>Architecture:</strong> inspect plans and annotations; they fail earlier than large renders.</li></ul>
-      </section>
-      <section class="panel landing-copy">
-        <h2 class="landing-h2">A safer export sequence</h2>
-        <ol><li>Export once from Figma, InDesign, Keynote, or another layout tool using web-quality images.</li><li>Remove hidden pages, oversized embedded originals, and repeated spreads.</li><li>Compress toward the portal limit, download the result, and compare three representative pages with the original.</li><li>If the result looks soft, shorten the portfolio rather than forcing a dramatically smaller target.</li></ol>
-      </section>
-      <nav class="panel landing-sizes related-tools" aria-label="Related PDF tools"><h2 class="landing-h2">Related tools</h2><div class="footer-links"><a href="/compress-figma-pdf">Compress a Figma PDF</a><a href="/compress-pdf-for-job-application">PDF for job applications</a><a href="/compress-pdf-to-10mb">Compress to 10MB</a></div></nav>
+      <article class="portfolio-guide">
+        <header class="guide-heading">
+          <p class="guide-eyebrow">DESIGN PORTFOLIOS</p>
+          <h2>Compress a design portfolio PDF</h2>
+          <p>Keep project images and typography ready for review when an application portal sets a file-size limit.</p>
+        </header>
+        <div class="guide-highlights">
+          <p class="target-guidance"><strong>Where to start</strong>Try 10MB first. If the portal allows more, use the largest accepted size so photography and interface details stay easier to judge.</p>
+          <p class="quality-caveat"><strong>Check the result</strong>Image-heavy portfolios may not remain presentation-ready at very small targets. Inspect type, captions, and full-bleed images after download.</p>
+        </div>
+        <section class="guide-section">
+          <div><p class="guide-index">01 / REVIEW</p><h3>Protect the pages reviewers study</h3></div>
+          <div><p>Keep the cover, contents, project title pages, and strongest outcome images crisp. If the file is still too large, remove duplicate process shots before lowering quality across every page.</p><ul><li><strong>UI and product design:</strong> check small labels, component states, and device mockups at 100% zoom.</li><li><strong>Graphic design:</strong> watch gradients, fine linework, and text over photographs.</li><li><strong>Architecture:</strong> inspect plans and annotations; they soften earlier than large renders.</li></ul></div>
+        </section>
+        <section class="guide-section">
+          <div><p class="guide-index">02 / EXPORT</p><h3>A safer export sequence</h3></div>
+          <ol><li>Export from Figma, InDesign, Keynote, or another layout tool using web-quality images.</li><li>Remove hidden pages, oversized embedded originals, and repeated spreads.</li><li>Compress toward the portal limit, then compare three representative pages with the original.</li><li>If the result looks soft, shorten the portfolio instead of forcing a much smaller target.</li></ol>
+        </section>
+        <nav class="guide-related related-tools" aria-label="Related PDF tools"><h3>Continue with</h3><div class="guide-links"><a href="/compress-figma-pdf">Figma exports</a><a href="/compress-pdf-for-job-application">Job applications</a><a href="/compress-pdf-to-10mb">10MB target</a></div></nav>
+      </article>
       <div id="ad-slot-main" class="ad-slot" hidden></div>
     </main>
     <footer class="site-footer"><div class="footer-inner"><strong>TinyPDF</strong><nav class="footer-links"><a href="/">Home</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/faq">FAQ</a></nav></div></footer>
-    <script src="/ad-slot.js?v=1.3.0" defer></script><script src="/i18n.js?v=1.0.1" defer></script><script src="/web-request.js?v=1.0.0" defer></script><script src="/app-simple.js?v=2.0.1" defer></script><script src="/sketch-ui.js?v=2.1.0" defer></script><script src="/site-banner.js?v=2" defer></script>
+    <script src="/ad-slot.js?v=1.3.0" defer></script><script src="/i18n.js?v=1.0.1" defer></script><script src="/web-request.js?v=1.0.0" defer></script><script src="/app-simple.js?v=2.0.2" defer></script><script src="/sketch-ui.js?v=2.1.0" defer></script><script src="/site-banner.js?v=2" defer></script>
   </body>
 </html>

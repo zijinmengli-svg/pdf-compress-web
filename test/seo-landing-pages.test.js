@@ -113,7 +113,7 @@ function jaccard(left, right) {
         `${page.path} must preset ${page.target}MB`
       );
       assert.match(response.body, /src="\/web-request\.js\?v=1\.0\.0"/);
-      assert.match(response.body, /src="\/app-simple\.js\?v=2\.0\.1"/);
+      assert.match(response.body, /src="\/app-simple\.js\?v=2\.0\.[12]"/);
       assert.match(response.body, /<body\s+class="sketch-ui"/);
       assert.match(response.body, /href="\/sketch-ui\.css\?v=2"/);
       assert.match(response.body, /class="brand"/);
@@ -149,7 +149,7 @@ function jaccard(left, right) {
       assert.match(response.body, /class="[^"]*quality-caveat[^"]*"/);
       assert.match(response.body, /<nav\s+class="[^"]*related-tools[^"]*"/);
       assert.match(response.body, /<body\s+class="sketch-ui"/);
-      assert.match(response.body, /href="\/sketch-ui\.css\?v=2"/);
+      assert.match(response.body, /href="\/sketch-ui\.css\?v=[23]"/);
       assert.match(response.body, /class="brand"/);
       assert.match(response.body, /class="language-menu"/);
       assert.match(response.body, /id="upload-icon"/);
@@ -168,6 +168,13 @@ function jaccard(left, right) {
         words: visibleWords(response.body),
       });
     }
+
+    const portfolioZh = await get("/zh/compress-portfolio-pdf");
+    assert.strictEqual(portfolioZh.status, 200);
+    assert.match(portfolioZh.body, /<html lang="zh-CN">/);
+    assert.match(portfolioZh.body, /<h2>压缩设计作品集 PDF<\/h2>/);
+    assert.match(portfolioZh.body, /rel="canonical" href="https:\/\/tinypdf\.cn\/zh\/compress-portfolio-pdf"/);
+    assert.match(sitemap.body, /<loc>https:\/\/tinypdf\.cn\/zh\/compress-portfolio-pdf<\/loc>/);
 
     assert.strictEqual(new Set(intentDocuments.map(page => page.title)).size, INTENT_PAGES.length, "intent titles must be unique");
     assert.strictEqual(new Set(intentDocuments.map(page => page.h1)).size, INTENT_PAGES.length, "intent H1s must be unique");

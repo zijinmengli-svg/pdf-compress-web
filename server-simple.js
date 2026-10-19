@@ -14,6 +14,7 @@ const { chooseAnalyticsFile } = require("./lib/analytics-path");
 const { createAnalyticsStore } = require("./lib/analytics-store");
 const { createBannerStore } = require("./lib/banner-store");
 const { createBannerRoutes } = require("./lib/banner-routes");
+const { validIndexNowKey } = require("./lib/indexnow");
 const { compressionTimeoutMs } = require("./lib/compression-timeout");
 const { gsTimeoutMsForBytes } = require("./lib/gs-timeout");
 const {
@@ -57,6 +58,7 @@ const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.randomBy
 const WEB_SESSION_SECRET = process.env.WEB_SESSION_SECRET || ADMIN_SESSION_SECRET;
 const ADMIN_COOKIE = "tinypdf_admin";
 const WEB_SESSION_COOKIE = "tinypdf_web_session";
+const INDEXNOW_KEY = validIndexNowKey(process.env.INDEXNOW_KEY) ? process.env.INDEXNOW_KEY : "";
 const ADMIN_SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 const MAX_UPLOAD_MB    = 100;   // 硬上限：超出直接 413 拒绝（服务端强制，不可绕过）
@@ -1389,6 +1391,16 @@ function isRealBrowser(req) {
 }
 
 async function handleStatic(req, res, url) {
+  if (INDEXNOW_KEY && url.pathname === `/${INDEXNOW_KEY}.txt` && req.method === "GET") {
+    setSecurityHeaders(res);
+    res.writeHead(200, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Content-Length": Buffer.byteLength(INDEXNOW_KEY),
+      "Cache-Control": "public, max-age=300",
+    });
+    res.end(INDEXNOW_KEY);
+    return;
+  }
   const legacyRedirects = new Map([
     ["/en", "/"],
     ["/en/", "/"],

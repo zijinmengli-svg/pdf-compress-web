@@ -110,6 +110,7 @@ function trackEvent(event, data = {}, options = {}) {
     event,
     sessionId: getSessionId(),
     clientId: getClientId(),
+    path: window.location.pathname,
     referrer: document.referrer || "",
     utm: currentUtm(),
     data: {

@@ -205,6 +205,21 @@ async function startServer(port, env) {
     assert.strictEqual(summary.recentEvents.length, 8);
   });
 
+  await test("Bing landing page keeps country and complete funnel through download", async () => {
+    const firstTouch = { source: "bing.com", sourceCategory: "referral", landingPath: "/compress-portfolio-pdf", referrer: "https://www.bing.com/search", utm: {} };
+    const events = ["page_view", "file_selected", "compress_success", "download_clicked"].map((event, index) => ({
+      ts: `2026-10-19T00:0${index}:00.000Z`, event, clientId: "visitor-1", sessionId: "session-1",
+      path: index ? "/compress-pdf-to-10mb" : "/compress-portfolio-pdf", country: "US", firstTouch,
+      data: { fileName: "portfolio.pdf" },
+    }));
+    const summary = summarizeAnalytics(events, new Date("2026-10-19T01:00:00.000Z"));
+    assert.deepStrictEqual(summary.acquisition.landingPages[0], {
+      source: "bing.com", landingPath: "/compress-portfolio-pdf", country: "US",
+      visits: 1, visitors: 1, fileSelections: 1, compressions: 1, downloads: 1,
+    });
+    assert.strictEqual(sourceFor(events[3]), "bing.com");
+  });
+
   await test("summarizeAnalytics keeps all-time totals outside the 30-day dashboard window", async () => {
     const now = new Date("2026-07-03T12:00:00.000Z");
     const events = [
@@ -431,6 +446,53 @@ async function startServer(port, env) {
       assert.ok(adminJs.includes("refresh-status"));
       assert.ok(adminJs.includes("刷新中"));
       assert.ok(adminJs.includes('cache: "no-store"'));
+    } finally {
+      srv.kill("SIGKILL");
+      await fsp.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  await test("Bing entry retains its first page after internal navigation in the admin report", async () => {
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "tinypdf-bing-attribution-"));
+    const srv = await startServer(3824, {
+      ADMIN_PASSWORD: "secret-pass",
+      ADMIN_SESSION_SECRET: "test-session-secret",
+      ANALYTICS_FILE: path.join(dir, "events.jsonl"),
+    });
+    try {
+      const landing = await request(3824, "GET", "/compress-portfolio-pdf?utm_source=bing", null, {
+        Referer: "https://www.bing.com/search?q=private+portfolio",
+      });
+      assert.strictEqual(landing.status, 200);
+      const firstCookie = landing.headers["set-cookie"].find(value => value.startsWith("tinypdf_web_session=")).split(";")[0];
+      const nextPage = await request(3824, "GET", "/compress-pdf-to-10mb", null, {
+        Cookie: firstCookie, Referer: "http://127.0.0.1:3824/compress-portfolio-pdf",
+      });
+      assert.strictEqual(nextPage.status, 200);
+      const nextCookie = nextPage.headers["set-cookie"].find(value => value.startsWith("tinypdf_web_session=")).split(";")[0];
+      for (const event of ["page_view", "file_selected", "compress_success", "download_clicked"]) {
+        const tracked = await request(3824, "POST", "/api/track", {
+          event, clientId: "bing-visitor", sessionId: "bing-session",
+          path: event === "page_view" ? "/compress-portfolio-pdf" : "/compress-pdf-to-10mb",
+          data: { fileName: "portfolio.pdf" },
+        }, { Cookie: nextCookie, "CF-IPCountry": "US" });
+        assert.strictEqual(tracked.status, 200);
+      }
+      const login = await request(3824, "POST", "/api/admin/login", { password: "secret-pass" });
+      const cookie = login.headers["set-cookie"].find(value => value.startsWith("tinypdf_admin=")).split(";")[0];
+      const summary = await request(3824, "GET", "/api/admin/summary", null, { Cookie: cookie });
+      const body = JSON.parse(summary.body);
+      assert.deepStrictEqual(body.acquisition.landingPages[0], {
+        source: "bing", landingPath: "/compress-portfolio-pdf", country: "US",
+        visits: 1, visitors: 1, fileSelections: 1, compressions: 1, downloads: 1,
+      });
+      assert.strictEqual(body.recentEvents[0].path, "/compress-pdf-to-10mb");
+      assert.strictEqual(body.recentEvents[0].firstTouch.referrer, "https://www.bing.com/search");
+      const csv = await request(3824, "GET", "/api/admin/export?range=all", null, { Cookie: cookie });
+      assert.ok(csv.body.includes("首次落地页"));
+      assert.ok(csv.body.includes("/compress-portfolio-pdf"));
+      const adminPage = await request(3824, "GET", "/admin");
+      assert.ok(adminPage.body.includes("搜索落地页转化"));
     } finally {
       srv.kill("SIGKILL");
       await fsp.rm(dir, { recursive: true, force: true });

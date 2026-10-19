@@ -19,7 +19,9 @@ const { gsTimeoutMsForBytes } = require("./lib/gs-timeout");
 const {
   WEB_SESSION_MAX_AGE_MS,
   createWebSession,
+  renewWebSession,
   verifyWebSession,
+  sanitizeLandingPath,
   requestTokenFor,
   verifyRequestToken,
   isAutomatedUserAgent,
@@ -192,7 +194,21 @@ function analyticsClientId(req) {
 function makeWebSessionCookie(req, value) {
   const host = req.headers.host || "";
   const secure = /(^|\.)tinypdf\.cn(?::\d+)?$/i.test(host) || req.headers["x-forwarded-proto"] === "https";
-  return `${WEB_SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; Max-Age=${Math.floor(WEB_SESSION_MAX_AGE_MS / 1000)}; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+  return `${WEB_SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; Max-Age=${Math.floor(WEB_SESSION_MAX_AGE_MS / 1000) + 3600}; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+}
+
+function internalReferrer(req) {
+  try {
+    const referrer = new URL(req.headers.referer || req.headers.referrer || "");
+    return referrer.host.toLowerCase() === String(req.headers.host || "").toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+function referrerPagePath(req) {
+  if (!internalReferrer(req)) return "/";
+  return sanitizeLandingPath(new URL(req.headers.referer || req.headers.referrer).pathname);
 }
 
 function webSessionContext(req) {
@@ -270,7 +286,7 @@ function requestMeta(req, url, extra = {}) {
   return {
     sessionId: extra.sessionId || req.headers["x-tinypdf-session-id"] || "",
     clientId: extra.clientId || req.headers["x-tinypdf-client-id"] || analyticsClientId(req),
-    path: url ? url.pathname : "",
+    path: sanitizeLandingPath(extra.path || (url && url.pathname) || "/"),
     referrer: extra.referrer != null ? extra.referrer : (req.headers.referer || req.headers.referrer || ""),
     utm: requestUtm(req, extra),
     userAgent: ua,
@@ -278,6 +294,8 @@ function requestMeta(req, url, extra = {}) {
     device,
     browser,
     landingLanguage: normalizeLandingLanguage(extra.landingLanguage),
+    firstTouch: extra.firstTouch || null,
+    lastTouch: extra.lastTouch || null,
   };
 }
 
@@ -947,10 +965,14 @@ async function handleApiRequest(req, res, url) {
       !isAutomatedUserAgent(req.headers["user-agent"]) &&
       isSameOriginRequest(req)
     ) {
-      const renewed = createWebSession(WEB_SESSION_SECRET, {
+      const landing = {
         referrer: req.headers.referer || req.headers.referrer || "",
         utm: requestUtm(req),
-      });
+        path: referrerPagePath(req),
+        internal: internalReferrer(req),
+      };
+      const renewed = session.value && renewWebSession(session.value, WEB_SESSION_SECRET, landing)
+        || createWebSession(WEB_SESSION_SECRET, landing);
       session = renewed;
       sessionCookie = makeWebSessionCookie(req, renewed.value);
     }
@@ -993,6 +1015,9 @@ async function handleApiRequest(req, res, url) {
           clientId: body.clientId || analyticsClientId(req),
           referrer: session.claims.attribution.referrer,
           utm: session.claims.attribution.utm,
+          path: body.path,
+          firstTouch: session.claims.firstTouch || session.claims.attribution,
+          lastTouch: session.claims.lastTouch || session.claims.attribution,
           landingLanguage: body.landingLanguage || (body.data && body.data.landingLanguage),
         }),
         data: body.data || {},
@@ -1135,6 +1160,9 @@ async function handleApiRequest(req, res, url) {
         landingLanguage: formField("landingLanguage"),
         referrer: websiteSession.claims.attribution.referrer,
         utm: websiteSession.claims.attribution.utm,
+        path: (websiteSession.claims.lastTouch || {}).landingPath,
+        firstTouch: websiteSession.claims.firstTouch || websiteSession.claims.attribution,
+        lastTouch: websiteSession.claims.lastTouch || websiteSession.claims.attribution,
       });
       const jobAccess = createJobAccess(websiteSession.claims);
 
@@ -1394,12 +1422,17 @@ async function handleStatic(req, res, url) {
     // 真实浏览器访问首页：在写响应头之前解析/分配稳定 client_id（新访客种第一方 cookie），
     // 供服务端 page_view 上报使用，修正国内用户因无 _ga cookie 每次被算作新用户的问题。
     let pageViewCid = null;
-    if ((pathname === "/index.html" || pathname === "/zh/index.html") && isRealBrowser(req)) {
+    if (ext === ".html" && pathname !== "/admin.html" && isRealBrowser(req)) {
       pageViewCid = ensureClientId(req, res);
-      const session = createWebSession(WEB_SESSION_SECRET, {
+      const landing = {
         referrer: req.headers.referer || req.headers.referrer || "",
         utm: utmFromUrl(`http://${req.headers.host || "tinypdf.cn"}${url.pathname}${url.search}`),
-      });
+        path: url.pathname,
+        internal: internalReferrer(req),
+      };
+      const current = webSessionContext(req);
+      const session = current.value && renewWebSession(current.value, WEB_SESSION_SECRET, landing)
+        || createWebSession(WEB_SESSION_SECRET, landing);
       appendSetCookie(res, makeWebSessionCookie(req, session.value));
     }
 

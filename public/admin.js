@@ -86,6 +86,7 @@ function formatTime(value) {
 }
 
 function sourceFor(event) {
+  if (event.firstTouch && event.firstTouch.source) return event.firstTouch.source;
   if (event.utm && event.utm.source) return event.utm.source;
   if (!event.referrer) return "直接访问";
   try {
@@ -339,6 +340,22 @@ function renderPromotions(summary) {
   `).join("") : `<tr><td colspan="7">暂无推广来源数据。后续推广链接请带 utm_source、utm_campaign、utm_content。</td></tr>`;
 }
 
+function renderLandingPages(summary) {
+  const rows = summary.acquisition.landingPages || [];
+  document.getElementById("landing-page-rows").innerHTML = rows.length ? rows.slice(0, 30).map(row => `
+    <tr>
+      <td>${text(row.source || "-")}</td>
+      <td>${text(row.landingPath || "-")}</td>
+      <td>${text(row.country || "Unknown")}</td>
+      <td>${text(formatNumber(row.visits))}</td>
+      <td>${text(formatNumber(row.visitors))}</td>
+      <td>${text(formatNumber(row.fileSelections))}</td>
+      <td>${text(formatNumber(row.compressions))}</td>
+      <td>${text(formatNumber(row.downloads))}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="8">暂无入口页面转化数据</td></tr>`;
+}
+
 function renderRecentFiles(summary) {
   const rows = (summary.files.recentFileNames || []).slice(0, 5);
   document.getElementById("recent-files").innerHTML = rows.length ? rows.map(row => `
@@ -388,6 +405,7 @@ function render(summary) {
   renderBarList("file-categories", (summary.files.categories || []).map(row => ({ ...row, category: categoryLabel(row.category) })), "category");
   renderCompression(summary);
   renderPromotions(summary);
+  renderLandingPages(summary);
   renderRecentFiles(summary);
   renderRecentEvents(summary);
 }

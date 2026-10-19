@@ -3,6 +3,7 @@
 const assert = require("assert");
 const {
   createWebSession,
+  renewWebSession,
   verifyWebSession,
   requestTokenFor,
   verifyRequestToken,
@@ -87,6 +88,29 @@ check("signed website sessions verify only with the right secret and lifetime", 
     verifyWebSession(created.value, "test-secret", new Date("2026-07-28T03:00:00.000Z")),
     null
   );
+});
+
+check("Bing first touch survives navigation and an expired signed-session renewal", () => {
+  const start = new Date("2026-10-19T00:00:00.000Z");
+  const first = createWebSession("test-secret", {
+    referrer: "https://www.bing.com/search?q=private+portfolio",
+    path: "/compress-portfolio-pdf?draft=private",
+  }, start);
+  assert.strictEqual(first.claims.firstTouch.source, "bing.com");
+  assert.strictEqual(first.claims.firstTouch.referrer, "https://www.bing.com/search");
+  assert.strictEqual(first.claims.firstTouch.landingPath, "/compress-portfolio-pdf");
+
+  const renewed = renewWebSession(first.value, "test-secret", {
+    referrer: "https://tinypdf.cn/compress-portfolio-pdf",
+    path: "/compress-pdf-to-10mb?name=private",
+    internal: true,
+  }, new Date("2026-10-19T02:01:00.000Z"));
+  assert.strictEqual(renewed.claims.sid, first.claims.sid);
+  assert.deepStrictEqual(renewed.claims.firstTouch, first.claims.firstTouch);
+  assert.strictEqual(renewed.claims.lastTouch.source, "bing.com");
+  assert.strictEqual(renewed.claims.lastTouch.landingPath, "/compress-pdf-to-10mb");
+  assert.ok(verifyWebSession(renewed.value, "test-secret", new Date("2026-10-19T02:02:00.000Z")));
+  assert.strictEqual(renewWebSession(first.value, "wrong-secret", {}, new Date("2026-10-19T02:01:00.000Z")), null);
 });
 
 check("request tokens are bound to the signed session value", () => {

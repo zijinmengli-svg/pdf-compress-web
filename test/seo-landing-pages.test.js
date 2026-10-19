@@ -114,6 +114,14 @@ function jaccard(left, right) {
       );
       assert.match(response.body, /src="\/web-request\.js\?v=1\.0\.0"/);
       assert.match(response.body, /src="\/app-simple\.js\?v=2\.0\.1"/);
+      assert.match(response.body, /<body\s+class="sketch-ui"/);
+      assert.match(response.body, /href="\/sketch-ui\.css\?v=2"/);
+      assert.match(response.body, /class="brand"/);
+      assert.match(response.body, /class="language-menu"/);
+      assert.match(response.body, /id="upload-icon"/);
+      assert.match(response.body, /class="status-icon"/);
+      assert.match(response.body, /id="retry-button"/);
+      assert.match(response.body, /src="\/sketch-ui\.js\?v=2\.1\.0"/);
     }
 
     const homepage = await get("/");
@@ -140,6 +148,14 @@ function jaccard(left, right) {
       assert.match(response.body, /class="[^"]*target-guidance[^"]*"/);
       assert.match(response.body, /class="[^"]*quality-caveat[^"]*"/);
       assert.match(response.body, /<nav\s+class="[^"]*related-tools[^"]*"/);
+      assert.match(response.body, /<body\s+class="sketch-ui"/);
+      assert.match(response.body, /href="\/sketch-ui\.css\?v=2"/);
+      assert.match(response.body, /class="brand"/);
+      assert.match(response.body, /class="language-menu"/);
+      assert.match(response.body, /id="upload-icon"/);
+      assert.match(response.body, /class="status-icon"/);
+      assert.match(response.body, /id="retry-button"/);
+      assert.match(response.body, /src="\/sketch-ui\.js\?v=2\.1\.0"/);
       assert.ok(countMatches(response.body, /<a\s+href="\/compress-[^"]+"/g) >= 2, `${page.path} needs related tool links`);
       assert.match(homepage.body, new RegExp(`href="${page.path}"`));
       assert.match(sitemap.body, new RegExp(`<loc>https://tinypdf\\.cn${page.path}</loc>`));

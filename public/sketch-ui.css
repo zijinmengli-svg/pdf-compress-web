@@ -118,3 +118,27 @@
 @media(max-width:600px){.sketch-ui .topbar{padding-inline:16px}.sketch-ui .form>.action-row{margin-top:16px}.sketch-ui .has-result .status-card{padding:24px 16px}.sketch-ui .footer-inner{align-items:center;justify-content:center;padding:48px 16px 24px}.sketch-ui .footer-links{justify-content:center;gap:16px 24px}}
 @media(max-width:600px){.sketch-ui .form>.action-row{grid-row:5;grid-column:1}.sketch-ui .form>#target-error{grid-column:1}}
 @media(prefers-reduced-motion:reduce){.sketch-ui .dropzone:before,.sketch-ui .dropzone:after,.sketch-ui .is-busy .status-card:before,.sketch-ui .status-card:not(.is-error):after{animation:none}.sketch-ui .compression-outline path{transition:none}}
+
+/* Search guides share the production dark shell without turning articles into cards. */
+.sketch-ui .hero:has(.target-guidance),
+.sketch-ui .hero:has(.muted-text){max-width:1040px}
+.sketch-ui .product-descriptor{display:block;margin-top:10px;color:#777;font-size:18px;line-height:26px;font-weight:400}
+.sketch-ui .target-guidance,
+.sketch-ui .quality-caveat,
+.sketch-ui .muted-text{max-width:920px;margin:18px auto 0;color:#aab2b4;font-size:15px;line-height:24px}
+.sketch-ui .target-guidance strong,
+.sketch-ui .quality-caveat strong,
+.sketch-ui .muted-text strong{color:#e4e8e8}
+.sketch-ui .landing-copy,
+.sketch-ui .landing-sizes{margin-top:64px;padding:0 0 40px;border-bottom:1px solid #303638;color:#e8eeee}
+.sketch-ui .landing-copy p,
+.sketch-ui .landing-copy ul,
+.sketch-ui .landing-copy ol{color:#aeb8ba}
+.sketch-ui .landing-copy li strong{color:#e8eeee}
+.sketch-ui .landing-h2,
+.sketch-ui .landing-faq-title{color:#eef3f3}
+.sketch-ui .faq-card h2{color:#eef3f3}
+.sketch-ui .faq-card p{color:#aeb8ba}
+.sketch-ui .landing-sizes .footer-links a{color:#1fcbb5}
+.sketch-ui .landing-sizes .footer-links{justify-content:flex-start}
+@media(max-width:600px){.sketch-ui .target-guidance,.sketch-ui .quality-caveat,.sketch-ui .muted-text{padding-inline:16px}.sketch-ui .landing-copy,.sketch-ui .landing-sizes{margin-top:48px;padding-bottom:32px}.sketch-ui .product-descriptor{font-size:15px;line-height:22px}}

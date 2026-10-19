@@ -16,6 +16,7 @@
     <meta name="twitter:description" content="Extreme target size compression for the smallest upload limits." data-page-node-id="5VAJSfG0ifzcHCRFNaYTQw" />
     <title>Compress PDF to 1MB Online | Smallest Possible PDF, Free</title>
     <link rel="stylesheet" href="/styles.css" data-page-node-id="L71aoklspt0jcODdSIZtdM" />
+    <link rel="stylesheet" href="/sketch-ui.css?v=2" />
     <link rel="stylesheet" href="/site-banner.css?v=2" />
     <link rel="canonical" href="https://tinypdf.cn/compress-pdf-to-1mb" data-page-node-id="znUs2FfoNuSfHVOTXYO6vq" />
     <link rel="alternate" hreflang="en" href="https://tinypdf.cn/compress-pdf-to-1mb" data-page-node-id="J6pG0EpHQUXB9C7BNqDSs6" />
@@ -68,12 +69,13 @@
       }
     </script>
   </head>
-  <body data-page-node-id="85CZJhKlLsR8TW4NIfsEE1">
+  <body class="sketch-ui" data-page-node-id="85CZJhKlLsR8TW4NIfsEE1">
     <main class="shell" data-page-node-id="BuwnLH9nE9ZAlaSTlI6dy1">
       <header class="topbar" data-page-node-id="4TmNJ7os3AYDtF0D8QbHJD">
-        <a href="/" class="eyebrow" data-page-node-id="uaFOINCpJR8LYnZwuWdRq2">TinyPDF</a>
+        <a href="/" class="brand" data-page-node-id="uaFOINCpJR8LYnZwuWdRq2"><img src="/assets/sketch/TinyPDF@2x.png" alt="TinyPDF" width="96" height="24" /></a>
         <div class="topbar-actions" data-page-node-id="a3RSW4w0jmXZRchg6AEBdT">
-          <a class="language-link" href="/zh/" lang="zh-CN" hreflang="zh-CN" data-page-node-id="4cr4vbqz7JqDKWE84sRLSZ">中文</a>
+          <span class="quota-preview">Free PDF compression</span>
+          <details class="language-menu"><summary>English</summary><nav><a href="/" aria-current="page">English</a><a href="/zh/" lang="zh-CN" hreflang="zh-CN">中文</a></nav></details>
           <div class="usage-bar" data-page-node-id="5aagCMwEIEY91j8u3ZdlBp">
             <span class="usage-badge" id="usage-display" aria-live="polite" data-page-node-id="4mA0jlxr2HmIKtqborDRGU">Free · No account required · One file up to 100MB</span>
           </div>
@@ -96,6 +98,7 @@
         <form id="compress-form" class="form" novalidate data-page-node-id="IGBPGKsMZ6i3wWiTjYHDer">
           <label class="dropzone" id="dropzone" for="pdf" data-page-node-id="XubsSmH5VGLQ3wLEQsZSX2">
             <input id="pdf" name="pdf" type="file" accept="application/pdf" required data-page-node-id="GcZLbm8vJv3tNN7CP7k4F7" />
+            <img class="upload-icon" id="upload-icon" src="/assets/sketch/upload.png" alt="" width="100" height="100" />
             <span class="drop-title" data-page-node-id="h0yGgfH3L1e9FZ20m30Z9b">Upload a PDF</span>
             <span class="drop-meta" id="file-meta" data-page-node-id="qnETT7rZHYBjfNfdUCekrB">Drag a file here, or click to choose one</span>
           </label>
@@ -121,6 +124,8 @@
         </form>
 
         <section class="status-card" id="status-card" hidden data-page-node-id="stZJrBrsksyEJHE9vI6fSQ">
+          <div class="status-icon"><img src="/assets/sketch/processing.png" alt="" width="140" height="140" /><span id="icon-percent">0%</span></div>
+          <p id="status-filename"></p>
           <div class="status-header" data-page-node-id="00U2TvnHdIbFBzuDTBTYXQ">
             <span id="status-title" data-page-node-id="FtfDCoKWILYnAocZt3ZVx1">Preparing</span>
             <span id="status-percent" data-page-node-id="XFcTOyfozTcLgEvY6c8EHd">0%</span>
@@ -131,6 +136,7 @@
           <p id="status-message" data-page-node-id="XUEiFSCqwW69jVsQcO49KG">Waiting for the job to start</p>
           <dl class="metrics" id="metrics" data-page-node-id="kaPAb6z9jx1mP4qLcaNUdP"></dl>
           <div class="action-row" id="download-row" hidden data-page-node-id="X24xPD3f8Y7YOIHK3dEEvq">
+            <button id="retry-button" type="button">Retry</button>
             <button id="download-button" type="button" data-page-node-id="DrwDPrABz3pkntzal4gme4">Download compressed PDF</button>
           </div>
         </section>
@@ -234,6 +240,7 @@
     <script src="/i18n.js?v=1.0.1" defer></script>
     <script src="/web-request.js?v=1.0.0" defer></script>
     <script src="/app-simple.js?v=2.0.1" defer></script>
+    <script src="/sketch-ui.js?v=2.1.0" defer></script>
     <script src="/site-banner.js?v=2" defer></script>
     <script>
       // Restore the intended target size after a back-navigation or reload.

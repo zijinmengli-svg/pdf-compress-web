@@ -125,6 +125,12 @@ function jaccard(left, right) {
     }
 
     const homepage = await get("/");
+    const homepageStyles = await get("/sketch-ui.css?v=3");
+    assert.match(homepage.body, /href="\/sketch-ui\.css\?v=3"/, "homepage must load refreshed layout styles");
+    assert.match(homepageStyles.body, /\.sketch-ui \.size-shortcuts\s*\{[^}]*max-width:1000px;[^}]*margin:[^;]*auto[^;]*;/,
+      "homepage shortcuts must align with the 1000px compressor panel");
+    assert.match(homepageStyles.body, /\.sketch-ui \.size-shortcuts \.footer-links\s*\{[^}]*flex-wrap:wrap;/,
+      "homepage shortcuts must wrap instead of overflowing narrow screens");
     const sitemap = await get("/sitemap.xml");
     const llms = await get("/llms.txt");
 

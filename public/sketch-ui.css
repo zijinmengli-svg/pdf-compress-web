@@ -141,7 +141,14 @@
 .sketch-ui .faq-card p{color:#aeb8ba}
 .sketch-ui .landing-sizes .footer-links a{color:#1fcbb5}
 .sketch-ui .landing-sizes .footer-links{justify-content:flex-start}
+.sketch-ui .size-shortcuts{width:calc(100% - 48px);max-width:1000px;margin:64px auto 0;padding-bottom:36px}
+.sketch-ui .size-shortcuts+.size-shortcuts{margin-top:36px}
+.sketch-ui .size-shortcuts .landing-h2{margin-bottom:18px;font-size:20px;line-height:28px}
+.sketch-ui .size-shortcuts .footer-links{display:flex;flex-wrap:wrap;justify-content:flex-start;gap:12px 28px}
+.sketch-ui .size-shortcuts .footer-links a{color:#b3d8d3;text-decoration:none;font-size:15px;line-height:24px}
+.sketch-ui .size-shortcuts .footer-links a:hover{text-decoration:underline;color:#1fcbb5}
 @media(max-width:600px){.sketch-ui .target-guidance,.sketch-ui .quality-caveat,.sketch-ui .muted-text{padding-inline:16px}.sketch-ui .landing-copy,.sketch-ui .landing-sizes{margin-top:48px;padding-bottom:32px}.sketch-ui .product-descriptor{font-size:15px;line-height:22px}}
+@media(max-width:600px){.sketch-ui .size-shortcuts{width:calc(100% - 32px);margin-top:48px}.sketch-ui .size-shortcuts+.size-shortcuts{margin-top:28px}.sketch-ui .size-shortcuts .footer-links{gap:10px 22px}}
 
 .sketch-ui .portfolio-guide{width:calc(100% - 48px);max-width:1000px;margin:88px auto 0;color:#e8eeee}
 .sketch-ui .guide-heading{border-top:1px solid #3a4c4d;padding:32px 0 30px}

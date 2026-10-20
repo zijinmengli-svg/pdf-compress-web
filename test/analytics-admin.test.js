@@ -460,20 +460,25 @@ async function startServer(port, env) {
       ANALYTICS_FILE: path.join(dir, "events.jsonl"),
     });
     try {
-      const landing = await request(3824, "GET", "/compress-portfolio-pdf?utm_source=bing", null, {
+      const retiredLanding = await request(3824, "GET", "/compress-portfolio-pdf?utm_source=bing", null, {
+        Referer: "https://www.bing.com/search?q=private+portfolio",
+      });
+      assert.strictEqual(retiredLanding.status, 301);
+      assert.strictEqual(retiredLanding.headers.location, "/?utm_source=bing#portfolio");
+      const landing = await request(3824, "GET", "/?utm_source=bing", null, {
         Referer: "https://www.bing.com/search?q=private+portfolio",
       });
       assert.strictEqual(landing.status, 200);
       const firstCookie = landing.headers["set-cookie"].find(value => value.startsWith("tinypdf_web_session=")).split(";")[0];
-      const nextPage = await request(3824, "GET", "/compress-pdf-to-10mb", null, {
-        Cookie: firstCookie, Referer: "http://127.0.0.1:3824/compress-portfolio-pdf",
+      const nextPage = await request(3824, "GET", "/zh/", null, {
+        Cookie: firstCookie, Referer: "http://127.0.0.1:3824/",
       });
       assert.strictEqual(nextPage.status, 200);
       const nextCookie = nextPage.headers["set-cookie"].find(value => value.startsWith("tinypdf_web_session=")).split(";")[0];
       for (const event of ["page_view", "file_selected", "compress_success", "download_clicked"]) {
         const tracked = await request(3824, "POST", "/api/track", {
           event, clientId: "bing-visitor", sessionId: "bing-session",
-          path: event === "page_view" ? "/compress-portfolio-pdf" : "/compress-pdf-to-10mb",
+          path: event === "page_view" ? "/" : "/zh/",
           data: { fileName: "portfolio.pdf" },
         }, { Cookie: nextCookie, "CF-IPCountry": "US" });
         assert.strictEqual(tracked.status, 200);
@@ -483,14 +488,14 @@ async function startServer(port, env) {
       const summary = await request(3824, "GET", "/api/admin/summary", null, { Cookie: cookie });
       const body = JSON.parse(summary.body);
       assert.deepStrictEqual(body.acquisition.landingPages[0], {
-        source: "bing", landingPath: "/compress-portfolio-pdf", country: "US",
+        source: "bing", landingPath: "/", country: "US",
         visits: 1, visitors: 1, fileSelections: 1, compressions: 1, downloads: 1,
       });
-      assert.strictEqual(body.recentEvents[0].path, "/compress-pdf-to-10mb");
+      assert.strictEqual(body.recentEvents[0].path, "/zh/");
       assert.strictEqual(body.recentEvents[0].firstTouch.referrer, "https://www.bing.com/search");
       const csv = await request(3824, "GET", "/api/admin/export?range=all", null, { Cookie: cookie });
       assert.ok(csv.body.includes("首次落地页"));
-      assert.ok(csv.body.includes("/compress-portfolio-pdf"));
+      assert.ok(csv.body.includes("bing"));
       const adminPage = await request(3824, "GET", "/admin");
       assert.ok(adminPage.body.includes("搜索落地页转化"));
     } finally {

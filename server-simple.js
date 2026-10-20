@@ -1369,6 +1369,7 @@ const MIME_TYPES = {
   ".jpeg": "image/jpeg",
   ".gif": "image/gif",
   ".svg": "image/svg+xml",
+  ".webp": "image/webp",
   ".ico": "image/x-icon",
   ".txt": "text/plain; charset=utf-8",
   ".xml": "application/xml; charset=utf-8",
@@ -1411,6 +1412,29 @@ async function handleStatic(req, res, url) {
   if (legacyRedirects.has(url.pathname)) {
     setSecurityHeaders(res);
     res.writeHead(301, { Location: legacyRedirects.get(url.pathname) });
+    res.end();
+    return;
+  }
+
+  const consolidatedRoutes = new Map([
+    ["/compress-pdf-to-20mb", "/#how-it-works"],
+    ["/compress-pdf-to-10mb", "/#how-it-works"],
+    ["/compress-pdf-to-5mb", "/#how-it-works"],
+    ["/compress-pdf-to-2mb", "/#how-it-works"],
+    ["/compress-pdf-to-1mb", "/#how-it-works"],
+    ["/compress-portfolio-pdf", "/#portfolio"],
+    ["/zh/compress-portfolio-pdf", "/zh/#portfolio"],
+    ["/compress-pdf-for-job-application", "/#portfolio"],
+    ["/compress-figma-pdf", "/#portfolio"],
+    ["/compress-pdf-for-email", "/#portfolio"],
+    ["/compress-pdf-without-losing-quality", "/#quality"],
+  ]);
+  const consolidatedPath = url.pathname.endsWith(".html") ? url.pathname.slice(0, -5) : url.pathname;
+  if (consolidatedRoutes.has(consolidatedPath)) {
+    const destination = new URL(consolidatedRoutes.get(consolidatedPath), "https://tinypdf.cn");
+    destination.search = url.search;
+    setSecurityHeaders(res);
+    res.writeHead(301, { Location: `${destination.pathname}${destination.search}${destination.hash}` });
     res.end();
     return;
   }

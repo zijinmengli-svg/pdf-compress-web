@@ -41,8 +41,8 @@
 .sketch-ui .inline-field input:focus-visible{outline:none;outline-offset:0}
 .sketch-ui .field-error{grid-column:1/-1;color:#ffaba7;margin:12px 0 0}
 .sketch-ui .quality-warning{position:static;color:#e4c58a;background:transparent;padding:8px 0;font-size:13px}
-.sketch-ui .processing-note{margin:80px 0 0;padding:0;border:0;background:none;color:#485052;font-size:14px;line-height:20px}
-.sketch-ui .processing-note strong{display:block;color:#778184;font-size:20px;line-height:24px;margin-bottom:14px}
+.sketch-ui .processing-note{margin:80px 0 0;padding:0;border:0;background:none;color:#899497;font-size:14px;line-height:20px}
+.sketch-ui .processing-note strong{display:block;color:#aeb8ba;font-size:20px;line-height:24px;margin-bottom:14px}
 .sketch-ui .processing-note p{margin:0;line-height:20px}
 .sketch-ui .site-footer{margin:0;padding:0;border:0;background:none}
 .sketch-ui .footer-inner{max-width:1440px;width:100%;margin:0 auto;padding:60px 80px 22px;min-height:120px;display:flex;justify-content:space-between;align-items:flex-end;font-size:14px;color:#bcc3c4}
@@ -172,3 +172,33 @@
 .sketch-ui .guide-links a{color:#31c7b6;text-decoration:none;font-size:15px;line-height:24px}
 .sketch-ui .guide-links a:hover{text-decoration:underline}
 @media(max-width:600px){.sketch-ui .portfolio-guide{width:calc(100% - 32px);margin-top:58px}.sketch-ui .guide-heading h2{font-size:23px;line-height:31px}.sketch-ui .guide-highlights{grid-template-columns:1fr;gap:22px}.sketch-ui .guide-highlights p.quality-caveat{border-left:0;border-top:1px solid #303638;padding:22px 0 0}.sketch-ui .guide-section{grid-template-columns:1fr;gap:18px;padding:28px 0 34px}.sketch-ui .guide-index{margin-bottom:8px}.sketch-ui .guide-related{gap:12px}}
+
+/* Homepage guidance stays below the tool and shares its content measure. */
+.sketch-ui .portfolio-story{width:calc(100% - 48px);max-width:1000px;margin:88px auto 0;color:#e9eeee}
+.sketch-ui .portfolio-story-heading{border-top:1px solid #3a4c4d;padding:36px 0 40px}
+.sketch-ui .portfolio-eyebrow,.sketch-ui .portfolio-step,.sketch-ui .portfolio-notes span{margin:0;color:#5dd3c5;font-size:12px;font-weight:700;line-height:20px}
+.sketch-ui .portfolio-story-heading h2{max-width:760px;margin:12px 0 0;font-size:30px;line-height:39px;font-weight:600}
+.sketch-ui .portfolio-story-heading>p:not(.portfolio-eyebrow){max-width:720px;margin:16px 0 0;color:#aeb8ba;font-size:16px;line-height:26px}
+.sketch-ui .portfolio-return{display:inline-flex;align-items:center;gap:8px;margin-top:18px;color:#5dd3c5;font-size:14px;font-weight:600;text-decoration:none}
+.sketch-ui .portfolio-return:hover,.sketch-ui .portfolio-return:focus-visible{text-decoration:underline}
+.sketch-ui .portfolio-feature{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);gap:48px;align-items:start;padding-bottom:44px}
+.sketch-ui .portfolio-carousel{min-width:0}
+.sketch-ui .portfolio-stage{position:relative;width:100%;aspect-ratio:16/9;overflow:hidden;border-radius:4px;outline:1px solid #3a4c4d}
+.sketch-ui .portfolio-slide{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover}
+.sketch-ui .portfolio-slide[hidden]{display:none}
+.sketch-ui .portfolio-dots{position:absolute;z-index:1;left:10px;bottom:10px;display:flex;gap:0}
+.sketch-ui .portfolio-dot{display:grid;place-items:center;width:18px;height:20px;padding:0;border:0;background:none;cursor:pointer}
+.sketch-ui .portfolio-dot::before{content:"";display:block;width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.48);box-shadow:0 1px 3px rgba(0,0,0,.65)}
+.sketch-ui .portfolio-dot[aria-pressed="true"]::before{width:8px;height:8px;background:#fff}
+.sketch-ui .portfolio-dot:hover::before{background:#fff}
+.sketch-ui .portfolio-dot:focus-visible{outline:2px solid #fff;outline-offset:1px;border-radius:4px}
+.sketch-ui .portfolio-caption{min-height:38px;margin:0;color:#879393;font-size:12px;line-height:19px}
+.sketch-ui .portfolio-feature-copy h3{margin:10px 0 18px;color:#e9eeee;font-size:23px;line-height:31px;font-weight:600}
+.sketch-ui .portfolio-feature-copy>p:not(.portfolio-step){margin:0 0 16px;color:#aeb8ba;font-size:15px;line-height:25px}
+.sketch-ui .portfolio-feature-copy>p:last-child{margin-bottom:0}
+.sketch-ui .portfolio-notes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px;border-top:1px solid #303638;border-bottom:1px solid #303638;padding:30px 0 34px}
+.sketch-ui .portfolio-notes>div+div{border-left:1px solid #303638;padding-left:32px}
+.sketch-ui .portfolio-notes h3{margin:9px 0 10px;color:#e9eeee;font-size:17px;line-height:24px;font-weight:600}
+.sketch-ui .portfolio-notes p{margin:0;color:#aeb8ba;font-size:14px;line-height:23px}
+@media(max-width:760px){.sketch-ui .portfolio-feature{grid-template-columns:1fr;gap:28px}.sketch-ui .portfolio-notes{grid-template-columns:1fr;gap:24px}.sketch-ui .portfolio-notes>div+div{border-left:0;border-top:1px solid #303638;padding:22px 0 0}}
+@media(max-width:600px){.sketch-ui .portfolio-story{width:calc(100% - 32px);margin-top:60px}.sketch-ui .portfolio-story-heading{padding:28px 0}.sketch-ui .portfolio-story-heading h2{font-size:24px;line-height:32px}.sketch-ui .portfolio-feature{padding-bottom:30px}.sketch-ui .portfolio-feature-copy h3{font-size:21px;line-height:28px}}

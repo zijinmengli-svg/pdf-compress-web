@@ -8,19 +8,7 @@ Official pages:
 - Chinese homepage: https://tinypdf.cn/zh/
 - Chinese FAQ: https://tinypdf.cn/zh/faq
 
-Target size pages (each page opens with the target size already filled in):
-- Compress PDF to 20MB: https://tinypdf.cn/compress-pdf-to-20mb
-- Compress PDF to 10MB: https://tinypdf.cn/compress-pdf-to-10mb
-- Compress PDF to 5MB: https://tinypdf.cn/compress-pdf-to-5mb
-- Compress PDF to 2MB: https://tinypdf.cn/compress-pdf-to-2mb
-- Compress PDF to 1MB: https://tinypdf.cn/compress-pdf-to-1mb
-
-Workflow guides:
-- Design portfolios: https://tinypdf.cn/compress-portfolio-pdf
-- Job applications: https://tinypdf.cn/compress-pdf-for-job-application
-- Figma exports: https://tinypdf.cn/compress-figma-pdf
-- Email attachments: https://tinypdf.cn/compress-pdf-for-email
-- Quality-first compression: https://tinypdf.cn/compress-pdf-without-losing-quality
+The homepage includes the compression tool and guidance for design portfolios, target sizes, and quality review. The Chinese homepage presents equivalent guidance. Former topic-specific URLs redirect to these homepages.
 
 Supported website workflow:
 - One PDF at a time

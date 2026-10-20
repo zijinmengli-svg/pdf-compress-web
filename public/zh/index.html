@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="TinyPDF 是免费的指定大小 PDF 压缩工具。输入目标文件大小，在线压缩单个 PDF，尽可能保留页数、页面尺寸和版式，无需注册。" />
+    <meta name="description" content="用 TinyPDF 将设计作品集或其他 PDF 尽可能压缩到指定大小。免费、无需注册，尽可能保留页数、页面尺寸和版式。" />
     <meta name="author" content="TinyPDF" />
     <meta name="robots" content="index, follow" />
     <meta property="og:title" content="TinyPDF 指定大小 PDF 压缩工具" />
@@ -17,7 +17,7 @@
     <meta name="twitter:description" content="将 PDF 尽可能压缩到你需要的目标大小。" />
     <title>TinyPDF 指定大小 PDF 压缩工具｜免费在线压缩 PDF</title>
     <link rel="stylesheet" href="/styles.css" />
-    <link rel="stylesheet" href="/sketch-ui.css?v=2" />
+    <link rel="stylesheet" href="/sketch-ui.css?v=7" />
     <link rel="canonical" href="https://tinypdf.cn/zh/" />
     <link rel="alternate" hreflang="zh-CN" href="https://tinypdf.cn/zh/" />
     <link rel="alternate" hreflang="en" href="https://tinypdf.cn/" />
@@ -109,6 +109,39 @@
         </aside>
       </section>
 
+      <section class="portfolio-story" id="portfolio" aria-labelledby="portfolio-title">
+        <header class="portfolio-story-heading">
+          <p class="portfolio-eyebrow">为设计师准备</p>
+          <h2 id="portfolio-title">压缩设计作品集 PDF，保留值得被认真看的细节。</h2>
+          <p>求职投递系统和邮件附件常有文件大小限制。TinyPDF 让你直接输入目标 MB 数值，不必为了提交文件而重新制作整份作品集。</p>
+          <a class="portfolio-return" href="#compress-form">返回压缩入口 <span aria-hidden="true">↑</span></a>
+        </header>
+        <div class="portfolio-feature">
+          <div class="portfolio-carousel" aria-label="作品集案例">
+            <div class="portfolio-stage">
+              <img class="portfolio-slide" src="/assets/portfolio-cover.webp" width="1920" height="1080" loading="lazy" alt="青绿色渐变背景的设计作品集封面，写有 Design Portfolio" data-caption="作品集封面案例。压缩后请检查你自己的 PDF 文件。" />
+              <img class="portfolio-slide" src="/assets/portfolio-spread.webp" width="1672" height="941" loading="lazy" alt="展示项目照片和页面排版的建筑设计作品集内页示意图" data-caption="作品集内页示意图，并非压缩前后效果对比。" hidden />
+              <div class="portfolio-dots" role="group" aria-label="选择作品集图片">
+                <button class="portfolio-dot" data-slide="0" aria-label="展示作品集封面" title="作品集封面" aria-pressed="true" type="button"></button>
+                <button class="portfolio-dot" data-slide="1" aria-label="展示作品集内页" title="作品集内页" aria-pressed="false" type="button"></button>
+              </div>
+            </div>
+            <p class="portfolio-caption" aria-live="polite">作品集封面案例。压缩后请检查你自己的 PDF 文件。</p>
+          </div>
+          <div class="portfolio-feature-copy" id="how-it-works">
+            <p class="portfolio-step">01 / 准备</p>
+            <h3>先看提交限制，不必一味压到最小。</h3>
+            <p>设计作品集 PDF 可以先尝试 10MB。如果投递系统允许 20MB，优先使用更宽松的上限，让项目图片和细小文字有更多清晰度空间。若必须控制在 5MB、2MB 或 1MB，需要接受更明显的画质取舍。</p>
+            <p>上传 PDF、输入目标大小，下载后再检查结果。Figma、InDesign 和演示文稿导出的 PDF 都可能包含体积过大的图片。</p>
+          </div>
+        </div>
+        <div class="portfolio-notes" id="quality">
+          <div><span>02 / 检查</span><h3>重点看评审会细看的页面。</h3><p>以 100% 比例比较封面、小字号说明、界面截图和大幅图片。如果细节变糊，优先精简作品集，而不是强行继续缩小文件。</p></div>
+          <div><span>03 / 保留</span><h3>尽可能保留原有结构。</h3><p>TinyPDF 会在接近目标大小的同时尽量保留页数、页面尺寸和版式。部分文件无法精确达到目标，也无法保证每张图片都保持原样。</p></div>
+          <div><span>04 / 分享</span><h3>确认后再用于投递。</h3><p>检查通过的文件可用于求职申请或邮件附件。文件只做临时处理，通常约一小时后删除；无需注册账号。</p></div>
+        </div>
+      </section>
+
       <div id="ad-slot-main" class="ad-slot" hidden></div>
     </main>
 
@@ -133,7 +166,7 @@
     <script src="/i18n.js?v=1.0.1" defer></script>
     <script src="/web-request.js?v=1.0.0" defer></script>
     <script src="/app-simple.js?v=2.0.1" defer></script>
-    <script src="/sketch-ui.js?v=2.1.0" defer></script>
+    <script src="/sketch-ui.js?v=2.2.0" defer></script>
   <link rel="stylesheet" href="/site-banner.css?v=2" />
 <script src="/site-banner.js?v=2" defer></script>
 </body>

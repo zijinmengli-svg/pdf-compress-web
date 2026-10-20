@@ -29,6 +29,20 @@
   new ResizeObserver(drawOutline).observe(card);
   card.addEventListener('compression-progress', drawOutline);
 
+  document.addEventListener('click', event => {
+    const dot = event.target.closest('.portfolio-dot');
+    if (!dot) return;
+    const carousel = dot.closest('.portfolio-carousel');
+    const slides = Array.from(carousel.querySelectorAll('.portfolio-slide'));
+    const index = Number(dot.dataset.slide);
+    if (!slides[index]) return;
+    slides.forEach((slide, slideIndex) => { slide.hidden = slideIndex !== index; });
+    carousel.querySelectorAll('.portfolio-dot').forEach(button => {
+      button.setAttribute('aria-pressed', String(Number(button.dataset.slide) === index));
+    });
+    carousel.querySelector('.portfolio-caption').textContent = slides[index].dataset.caption;
+  });
+
   let switching = false;
   document.querySelector('.language-menu').addEventListener('click', async event => {
     const link = event.target.closest('a');
@@ -48,7 +62,7 @@
         document.querySelector(selector).textContent = page.querySelector(selector).textContent;
       }
 
-      for (const selector of ['.processing-note', '.footer-inner', '.language-menu']) {
+      for (const selector of ['.processing-note', '.portfolio-story', '.footer-inner', '.language-menu']) {
         const current = document.querySelector(selector), source = page.querySelector(selector);
         current.replaceChildren(...Array.from(source.childNodes, node => document.importNode(node, true)));
       }

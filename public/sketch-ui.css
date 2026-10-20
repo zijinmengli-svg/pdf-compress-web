@@ -1,5 +1,5 @@
 /* UI from the supplied Sketch design. Scoped to the compressor pages. */
-.sketch-ui{color-scheme:dark;background:#111 url('/assets/sketch/bg@2x.png') center top / 1440px 1815px no-repeat;color:#fff;font-family:Arial,'PingFang SC',sans-serif;min-height:100vh;margin:0;display:flex;flex-direction:column}
+.sketch-ui{color-scheme:dark;background:#121212 url('/assets/sketch/bg@2x.png?v=2') center top / 1440px auto no-repeat;color:#fff;font-family:Arial,'PingFang SC',sans-serif;min-height:100vh;margin:0;display:flex;flex-direction:column}
 .sketch-ui *{box-sizing:border-box}
 .sketch-ui [hidden]{display:none!important}
 .sketch-ui .shell{width:100%;max-width:none;padding:0;margin:0;flex:1}

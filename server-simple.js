@@ -14,6 +14,9 @@ const { chooseAnalyticsFile } = require("./lib/analytics-path");
 const { createAnalyticsStore } = require("./lib/analytics-store");
 const { createBannerStore } = require("./lib/banner-store");
 const { createBannerRoutes } = require("./lib/banner-routes");
+const { createEmailAuthService } = require("./lib/auth/service");
+const { createEmailSender } = require("./lib/auth/email-sender");
+const { createEmailAuthRoutes } = require("./lib/auth/routes");
 const { validIndexNowKey } = require("./lib/indexnow");
 const { compressionTimeoutMs } = require("./lib/compression-timeout");
 const { gsTimeoutMsForBytes } = require("./lib/gs-timeout");
@@ -56,6 +59,7 @@ const analyticsStore = createAnalyticsStore({
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.randomBytes(32).toString("hex");
 const WEB_SESSION_SECRET = process.env.WEB_SESSION_SECRET || ADMIN_SESSION_SECRET;
+let emailAuthService = null;
 const ADMIN_COOKIE = "tinypdf_admin";
 const WEB_SESSION_COOKIE = "tinypdf_web_session";
 const INDEXNOW_KEY = validIndexNowKey(process.env.INDEXNOW_KEY) ? process.env.INDEXNOW_KEY : "";
@@ -954,8 +958,17 @@ const handleBannerRequest = createBannerRoutes({
   admin: hasValidAdminSession, website: validWebsiteRequest, sameOrigin: isSameOriginRequest,
   readJson: readJsonBody, json, record: recordAnalytics,
 });
+const handleEmailAuthRequest = createEmailAuthRoutes({
+  getService: () => emailAuthService,
+  website: validWebsiteRequest,
+  readJson: readJsonBody,
+  json,
+  sendError,
+  parseCookies,
+});
 async function handleApiRequest(req, res, url) {
   if (await handleBannerRequest(req, res, url)) return;
+  if (await handleEmailAuthRequest(req, res, url)) return;
   if (url.pathname === "/api/config" && req.method === "GET") {
     let session = webSessionContext(req);
     let sessionCookie = "";
@@ -1516,6 +1529,23 @@ async function main() {
   server.listen(PORT, HOST, () => {
     console.log(`TinyPDF running at http://${HOST}:${PORT}`);
   });
+  if (process.env.DATABASE_URL && process.env.RESEND_API_KEY && process.env.AUTH_FROM_EMAIL && process.env.WEB_SESSION_SECRET) {
+    const { Pool } = require("pg");
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 5000 });
+    try {
+      const service = createEmailAuthService({
+        pool,
+        secret: process.env.WEB_SESSION_SECRET,
+        sendCode: createEmailSender({ apiKey: process.env.RESEND_API_KEY, from: process.env.AUTH_FROM_EMAIL }),
+      });
+      await service.ready();
+      emailAuthService = service;
+      console.log("TinyPDF email login ready");
+    } catch {
+      console.error("TinyPDF email login unavailable; compression remains enabled");
+      await pool.end();
+    }
+  }
 }
 
 main().catch(console.error);

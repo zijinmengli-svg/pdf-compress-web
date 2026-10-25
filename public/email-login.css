@@ -10,10 +10,12 @@
 .email-login-panel .email-login-kicker{font-size:11px;letter-spacing:.16em;color:#36cdbb;font-weight:700}
 .email-login-panel label{display:block;color:#e4e8e8;font-size:14px;margin:18px 0 8px}
 .email-login-panel input{box-sizing:border-box;width:100%;height:48px;background:#292f30;border:1px solid #485152;border-radius:10px;color:#fff;font:inherit;padding:0 14px;outline:0}
-.email-login-panel input:focus{border-color:#63d5c6}
+.email-login-panel input:focus{background:#303738}
+.email-login-address-row{display:flex;align-items:center;gap:10px;min-width:0}
+.email-login-address-row input{flex:1;min-width:0}
 .email-login-panel button{font:inherit;cursor:pointer}
 .email-login-panel button:disabled{opacity:.5;cursor:not-allowed}
-.email-login-panel #email-login-send{display:block;width:max-content;max-width:100%;min-height:38px;margin-top:12px;padding:0 18px;border:1px solid #496260;border-radius:9px;background:#242c2d;color:#d9e7e5;font-size:13px;font-weight:600}
+.email-login-panel #email-login-send{flex:none;width:max-content;max-width:100%;min-height:38px;padding:0 12px;border:1px solid #496260;border-radius:9px;background:#242c2d;color:#d9e7e5;font-size:13px;font-weight:600;white-space:nowrap}
 .email-login-panel #email-login-send:not(:disabled):hover{border-color:#5cbdae;color:#fff}
 .email-login-panel #email-login-verify{width:100%;min-height:48px;margin-top:22px;border:0;border-radius:10px;background:#20c4b1;color:#082b29;font-weight:700}
 .email-login-panel #email-login-verify:not(:disabled):hover{background:#46d7c5}

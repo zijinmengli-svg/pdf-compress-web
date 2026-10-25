@@ -178,6 +178,28 @@ test("send code stays a compact secondary action while sign in is the primary ac
   } finally { await page.close(); }
 });
 
+test("email and send code share one row without an extra focus border", async () => {
+  const { page } = await pageWithAuth();
+  try {
+    await page.setViewportSize({ width: 320, height: 720 });
+    await page.goto(base);
+    await page.getByRole("button", { name: "Sign in with email" }).click();
+    const email = page.getByLabel("Email address");
+    const send = page.getByRole("button", { name: "Send code" });
+    const before = await email.evaluate(el => ({ border: getComputedStyle(el).borderColor, outline: getComputedStyle(el).outlineWidth }));
+    await email.fill("user@example.com");
+    const focused = await email.evaluate(el => ({ border: getComputedStyle(el).borderColor, outline: getComputedStyle(el).outlineWidth }));
+    const inputBox = await email.boundingBox();
+    const sendBox = await send.boundingBox();
+    const dialogBox = await page.locator(".email-login-dialog").boundingBox();
+    assert.ok(inputBox && sendBox && dialogBox);
+    assert.ok(sendBox.x > inputBox.x + inputBox.width, "send code should be to the right of email");
+    assert.ok(Math.abs((inputBox.y + inputBox.height / 2) - (sendBox.y + sendBox.height / 2)) < 2, "email and send code should align vertically");
+    assert.ok(sendBox.x + sendBox.width <= dialogBox.x + dialogBox.width, "send code should fit inside the dialog on mobile");
+    assert.deepEqual(focused, before, "focusing the email should not add or change the outer border");
+  } finally { await page.close(); }
+});
+
 test("Chinese sign-out confirmation keeps the account after Escape and only exits on confirm", async () => {
   const { page } = await pageWithAuth({ id: "account-1", email: "cn@example.com" });
   try {

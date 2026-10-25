@@ -69,8 +69,10 @@
       <p id="email-login-intro">${text("无需密码，输入邮箱验证码即可登录。压缩仍可免登录使用。", "No password needed. Enter an email code to sign in. You can still compress without an account.")}</p>
       <div id="email-login-form">
         <label for="email-login-address">${text("邮箱地址", "Email address")}</label>
-        <input id="email-login-address" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com" />
-        <button type="button" id="email-login-send">${text("发送验证码", "Send code")}</button>
+        <div class="email-login-address-row">
+          <input id="email-login-address" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com" />
+          <button type="button" id="email-login-send">${text("发送验证码", "Send code")}</button>
+        </div>
         <div id="email-login-code-section" hidden>
           <label for="email-login-code">${text("6 位验证码", "6-digit code")}</label>
           <input id="email-login-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" />

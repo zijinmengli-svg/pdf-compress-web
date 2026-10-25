@@ -77,9 +77,23 @@
           <button type="button" id="email-login-verify">${text("登录", "Sign in")}</button>
         </div>
       </div>
-      <div id="email-login-account" hidden>
-        <p id="email-login-current-email"></p>
-        <button type="button" id="email-login-logout">${text("退出登录", "Sign out")}</button>
+      <div id="email-login-account" class="email-login-account" hidden>
+        <div class="email-login-identity">
+          <span class="email-login-avatar" aria-hidden="true">T</span>
+          <div class="email-login-identity-fields">
+            <p class="email-login-field-name">${text("登录邮箱", "Email address")}</p>
+            <p id="email-login-current-email"></p>
+          </div>
+        </div>
+        <div class="email-login-id-block">
+          <p class="email-login-field-name">${text("账号 ID", "Account ID")}</p>
+          <code id="email-login-current-id"></code>
+        </div>
+        <nav class="email-login-account-nav" aria-label="${text("账户菜单", "Account menu")}">
+          <a href="/contact">${text("联系我们", "Contact us")}<span aria-hidden="true">↗</span></a>
+          <a href="/privacy">${text("隐私条款", "Privacy policy")}<span aria-hidden="true">↗</span></a>
+          <button type="button" id="email-login-logout">${text("退出登录", "Sign out")}<span aria-hidden="true">→</span></button>
+        </nav>
       </div>
       <p id="email-login-message" role="status" aria-live="polite"></p>
     </div>`;
@@ -147,10 +161,14 @@
 
   button.addEventListener("click", () => {
     const current = createDialog();
+    current.dataset.view = account ? "account" : "login";
+    current.querySelector("#email-login-title").textContent = account
+      ? text("我的账户", "My account") : text("邮箱登录", "Sign in with email");
     current.querySelector("#email-login-form").hidden = Boolean(account);
     current.querySelector("#email-login-account").hidden = !account;
     current.querySelector("#email-login-intro").hidden = Boolean(account);
     current.querySelector("#email-login-current-email").textContent = account?.email || "";
+    current.querySelector("#email-login-current-id").textContent = account?.id || "";
     current.message.textContent = !account && available === false
       ? text("邮箱登录暂时不可用，请稍后再试。", "Email sign-in is temporarily unavailable.") : "";
     current.updateControls();

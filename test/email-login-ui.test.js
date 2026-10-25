@@ -118,3 +118,37 @@ test("delivery errors are shown without pretending to sign in", async () => {
     assert.equal(await page.getByRole("button", { name: "Sign in with email" }).count(), 1);
   } finally { await page.close(); }
 });
+
+test("account panel shows identity and secondary-page links without squeezing on mobile", async () => {
+  const { page } = await pageWithAuth({ id: "account-1", email: "long.account.address@example.com" });
+  try {
+    await page.setViewportSize({ width: 375, height: 720 });
+    await page.goto(`${base}/zh/`);
+    await page.getByRole("button", { name: "我的账户" }).click();
+    const dialog = page.locator(".email-login-dialog");
+    assert.equal(await dialog.getByText("long.account.address@example.com").count(), 1);
+    assert.equal(await dialog.getByText("account-1").count(), 1);
+    assert.equal(await dialog.getByRole("link", { name: "联系我们" }).getAttribute("href"), "/contact");
+    assert.equal(await dialog.getByRole("link", { name: "隐私条款" }).getAttribute("href"), "/privacy");
+    const bounds = await dialog.boundingBox();
+    assert.ok(bounds.height >= 320, `account dialog too short: ${bounds.height}`);
+    assert.ok(bounds.width <= 375, `account dialog too wide: ${bounds.width}`);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  } finally { await page.close(); }
+});
+
+test("send code stays a compact secondary action while sign in is the primary action", async () => {
+  const { page } = await pageWithAuth();
+  try {
+    await page.goto(base);
+    await page.getByRole("button", { name: "Sign in with email" }).click();
+    const panelWidth = await page.locator(".email-login-panel").evaluate(el => el.getBoundingClientRect().width);
+    const sendWidth = await page.locator("#email-login-send").evaluate(el => el.getBoundingClientRect().width);
+    assert.ok(sendWidth < panelWidth * 0.6, `send code button too wide: ${sendWidth}/${panelWidth}`);
+    await page.getByLabel("Email address").fill("user@example.com");
+    await page.getByRole("button", { name: "Send code" }).click();
+    await page.locator("#email-login-code-section").waitFor({ state: "visible" });
+    const verifyWidth = await page.locator("#email-login-verify").evaluate(el => el.getBoundingClientRect().width);
+    assert.ok(verifyWidth > panelWidth * 0.75, `sign in button too narrow: ${verifyWidth}/${panelWidth}`);
+  } finally { await page.close(); }
+});

@@ -178,10 +178,12 @@
     document.body.appendChild(logoutDialog);
     const cancel = logoutDialog.querySelector("#email-logout-cancel");
     const confirm = logoutDialog.querySelector("#email-logout-confirm");
+    const close = logoutDialog.querySelector("#email-logout-close");
     const status = logoutDialog.querySelector("#email-logout-message");
     let signingOut = false;
     cancel.addEventListener("click", () => logoutDialog.close());
-    logoutDialog.querySelector("#email-logout-close").addEventListener("click", () => logoutDialog.close());
+    close.addEventListener("click", () => logoutDialog.close());
+    logoutDialog.addEventListener("cancel", event => { if (signingOut) event.preventDefault(); });
     logoutDialog.addEventListener("close", () => {
       status.textContent = "";
       if (account && !signingOut) button.click();
@@ -191,6 +193,7 @@
       signingOut = true;
       cancel.disabled = true;
       confirm.disabled = true;
+      close.disabled = true;
       status.textContent = "";
       try {
         await request("/api/auth/logout", { method: "POST" });
@@ -198,7 +201,7 @@
         updateButton();
         logoutDialog.close();
       } catch (error) { status.textContent = error.message; }
-      finally { signingOut = false; cancel.disabled = false; confirm.disabled = false; }
+      finally { signingOut = false; cancel.disabled = false; confirm.disabled = false; close.disabled = false; }
     });
     return logoutDialog;
   }

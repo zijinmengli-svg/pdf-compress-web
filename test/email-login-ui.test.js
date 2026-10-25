@@ -44,6 +44,7 @@ async function pageWithAuth(initialAccount = null) {
   let account = initialAccount;
   let lastEmail = "";
   let forcedError = null;
+  let logoutDelay = null;
   await page.route("**/api/auth/**", async route => {
     const req = route.request();
     const url = new URL(req.url());
@@ -61,10 +62,14 @@ async function pageWithAuth(initialAccount = null) {
       account = { id: "account-1", email: lastEmail };
       return respond(200, { authenticated: true, account });
     }
-    if (url.pathname === "/api/auth/logout") { account = null; return respond(200, { authenticated: false }); }
+    if (url.pathname === "/api/auth/logout") {
+      if (logoutDelay) await logoutDelay;
+      account = null;
+      return respond(200, { authenticated: false });
+    }
     return respond(404, { code: "NOT_FOUND" });
   });
-  return { page, setError: value => { forcedError = value; } };
+  return { page, setError: value => { forcedError = value; }, setLogoutDelay: value => { logoutDelay = value; } };
 }
 
 test("English login stays available before selecting a file and survives refresh", async () => {
@@ -187,4 +192,22 @@ test("Chinese sign-out confirmation keeps the account after Escape and only exit
     await page.getByRole("dialog", { name: "确认退出登录" }).getByRole("button", { name: "确认退出" }).click();
     await page.getByRole("button", { name: "邮箱登录" }).waitFor();
   } finally { await page.close(); }
+});
+
+test("confirmation cannot be dismissed while sign-out request is running", async () => {
+  let release;
+  const pendingLogout = new Promise(resolve => { release = resolve; });
+  const { page, setLogoutDelay } = await pageWithAuth({ id: "account-1", email: "user@example.com" });
+  setLogoutDelay(pendingLogout);
+  try {
+    await page.goto(base);
+    await page.getByRole("button", { name: "My account" }).click();
+    await page.getByRole("button", { name: "Sign out" }).click();
+    const confirm = page.getByRole("dialog", { name: "Confirm sign out" });
+    await confirm.getByRole("button", { name: "Sign out" }).click();
+    await page.keyboard.press("Escape");
+    assert.equal(await confirm.isVisible(), true);
+    release();
+    await page.getByRole("button", { name: "Sign in with email" }).waitFor();
+  } finally { release(); await page.close(); }
 });

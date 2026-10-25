@@ -8,6 +8,7 @@
   let account = null;
   let available = null;
   let dialog = null;
+  let logoutDialog = null;
   let sentEmail = "";
   let sending = false;
   let verifying = false;
@@ -74,8 +75,8 @@
           <label for="email-login-code">${text("6 位验证码", "6-digit code")}</label>
           <input id="email-login-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" />
           <p>${text("验证码 10 分钟内有效。", "The code is valid for 10 minutes.")}</p>
-          <button type="button" id="email-login-verify">${text("登录", "Sign in")}</button>
         </div>
+        <button type="button" id="email-login-verify">${text("登录", "Sign in")}</button>
       </div>
       <div id="email-login-account" class="email-login-account" hidden>
         <div class="email-login-identity">
@@ -144,10 +145,9 @@
       } catch (error) { message.textContent = error.message; }
       finally { verifying = false; updateControls(); }
     });
-    element("email-login-logout").addEventListener("click", async () => {
-      message.textContent = "";
-      try { await request("/api/auth/logout", { method: "POST" }); account = null; dialog.close(); updateButton(); }
-      catch (error) { message.textContent = error.message; }
+    element("email-login-logout").addEventListener("click", () => {
+      dialog.close();
+      createLogoutDialog().showModal();
     });
     element("email-login-close").addEventListener("click", () => dialog.close());
     dialog.addEventListener("close", () => {
@@ -157,6 +157,50 @@
     dialog.updateControls = updateControls;
     dialog.message = message;
     return dialog;
+  }
+
+  function createLogoutDialog() {
+    if (logoutDialog) return logoutDialog;
+    logoutDialog = document.createElement("dialog");
+    logoutDialog.className = "email-logout-dialog";
+    logoutDialog.setAttribute("aria-labelledby", "email-logout-title");
+    logoutDialog.innerHTML = `<div class="email-logout-panel">
+      <button type="button" class="email-login-close" id="email-logout-close" aria-label="${text("关闭", "Close")}">×</button>
+      <p class="email-login-kicker">TinyPDF ACCOUNT</p>
+      <h2 id="email-logout-title">${text("确认退出登录", "Confirm sign out")}</h2>
+      <p>${text("退出后需要重新使用邮箱验证码登录。", "You'll need an email code to sign in again.")}</p>
+      <div class="email-logout-actions">
+        <button type="button" id="email-logout-cancel">${text("取消", "Cancel")}</button>
+        <button type="button" id="email-logout-confirm">${text("确认退出", "Sign out")}</button>
+      </div>
+      <p id="email-logout-message" role="status" aria-live="polite"></p>
+    </div>`;
+    document.body.appendChild(logoutDialog);
+    const cancel = logoutDialog.querySelector("#email-logout-cancel");
+    const confirm = logoutDialog.querySelector("#email-logout-confirm");
+    const status = logoutDialog.querySelector("#email-logout-message");
+    let signingOut = false;
+    cancel.addEventListener("click", () => logoutDialog.close());
+    logoutDialog.querySelector("#email-logout-close").addEventListener("click", () => logoutDialog.close());
+    logoutDialog.addEventListener("close", () => {
+      status.textContent = "";
+      if (account && !signingOut) button.click();
+    });
+    confirm.addEventListener("click", async () => {
+      if (signingOut) return;
+      signingOut = true;
+      cancel.disabled = true;
+      confirm.disabled = true;
+      status.textContent = "";
+      try {
+        await request("/api/auth/logout", { method: "POST" });
+        account = null;
+        updateButton();
+        logoutDialog.close();
+      } catch (error) { status.textContent = error.message; }
+      finally { signingOut = false; cancel.disabled = false; confirm.disabled = false; }
+    });
+    return logoutDialog;
   }
 
   button.addEventListener("click", () => {

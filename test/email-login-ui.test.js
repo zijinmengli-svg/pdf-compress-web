@@ -84,6 +84,12 @@ test("English login stays available before selecting a file and survives refresh
     await page.getByRole("button", { name: "My account" }).click();
     assert.equal(await page.getByText("user@example.com").count(), 1);
     await page.getByRole("button", { name: "Sign out" }).click();
+    const confirm = page.getByRole("dialog", { name: "Confirm sign out" });
+    await confirm.waitFor();
+    await confirm.getByRole("button", { name: "Cancel" }).click();
+    await page.getByRole("button", { name: "My account" }).waitFor();
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByRole("dialog", { name: "Confirm sign out" }).getByRole("button", { name: "Sign out" }).click();
     await page.getByRole("button", { name: "Sign in with email" }).waitFor();
   } finally { await page.close(); }
 });
@@ -134,6 +140,14 @@ test("account panel shows identity and secondary-page links without squeezing on
     assert.ok(bounds.height >= 320, `account dialog too short: ${bounds.height}`);
     assert.ok(bounds.width <= 375, `account dialog too wide: ${bounds.width}`);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await dialog.getByRole("link", { name: "联系我们" }).click();
+    await page.getByRole("heading", { name: "Contact", exact: true }).waitFor();
+    assert.equal(new URL(page.url()).pathname, "/contact");
+    await page.goto(`${base}/zh/`);
+    await page.getByRole("button", { name: "我的账户" }).click();
+    await page.getByRole("link", { name: "隐私条款" }).click();
+    await page.getByRole("heading", { name: "Privacy Policy" }).waitFor();
+    assert.equal(new URL(page.url()).pathname, "/privacy");
   } finally { await page.close(); }
 });
 
@@ -142,13 +156,35 @@ test("send code stays a compact secondary action while sign in is the primary ac
   try {
     await page.goto(base);
     await page.getByRole("button", { name: "Sign in with email" }).click();
+    const signIn = page.getByRole("button", { name: "Sign in", exact: true });
+    assert.equal(await signIn.isVisible(), true);
+    assert.equal(await signIn.isDisabled(), true);
     const panelWidth = await page.locator(".email-login-panel").evaluate(el => el.getBoundingClientRect().width);
     const sendWidth = await page.locator("#email-login-send").evaluate(el => el.getBoundingClientRect().width);
     assert.ok(sendWidth < panelWidth * 0.6, `send code button too wide: ${sendWidth}/${panelWidth}`);
     await page.getByLabel("Email address").fill("user@example.com");
     await page.getByRole("button", { name: "Send code" }).click();
     await page.locator("#email-login-code-section").waitFor({ state: "visible" });
+    assert.equal(await signIn.isDisabled(), true);
+    await page.getByLabel("6-digit code").fill("123456");
+    assert.equal(await signIn.isEnabled(), true);
     const verifyWidth = await page.locator("#email-login-verify").evaluate(el => el.getBoundingClientRect().width);
     assert.ok(verifyWidth > panelWidth * 0.75, `sign in button too narrow: ${verifyWidth}/${panelWidth}`);
+  } finally { await page.close(); }
+});
+
+test("Chinese sign-out confirmation keeps the account after Escape and only exits on confirm", async () => {
+  const { page } = await pageWithAuth({ id: "account-1", email: "cn@example.com" });
+  try {
+    await page.goto(`${base}/zh/`);
+    await page.getByRole("button", { name: "我的账户" }).click();
+    await page.getByRole("button", { name: "退出登录" }).click();
+    const confirm = page.getByRole("dialog", { name: "确认退出登录" });
+    await confirm.waitFor();
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "我的账户" }).waitFor();
+    await page.getByRole("button", { name: "退出登录" }).click();
+    await page.getByRole("dialog", { name: "确认退出登录" }).getByRole("button", { name: "确认退出" }).click();
+    await page.getByRole("button", { name: "邮箱登录" }).waitFor();
   } finally { await page.close(); }
 });

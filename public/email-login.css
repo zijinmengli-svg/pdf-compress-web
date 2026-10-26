@@ -1,6 +1,7 @@
 .sketch-ui #email-login-button{border:0;background:transparent;color:#a9a9a9;font:inherit;font-size:14px;cursor:pointer;white-space:nowrap;padding:8px 0;min-width:68px;text-align:right}
 .sketch-ui #email-login-button:hover,.sketch-ui #email-login-button:focus-visible{color:#f3f3f3}
 .email-login-dialog{box-sizing:border-box;border:1px solid #343f40;border-radius:24px;padding:0;background:#181c1d;color:#f2f3f3;box-shadow:0 30px 90px #0009;width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto}
+.sketch-ui .email-login-dialog:focus-visible,.sketch-ui .email-logout-dialog:focus-visible{outline:none}
 .email-login-dialog::backdrop{background:#000b;backdrop-filter:blur(5px)}
 .email-login-dialog [hidden]{display:none!important}
 .email-login-panel{box-sizing:border-box;position:relative;padding:32px;display:flex;flex-direction:column;gap:12px;font-family:Arial,system-ui,sans-serif;min-width:0}
@@ -11,6 +12,7 @@
 .email-login-panel label{display:block;color:#e4e8e8;font-size:14px;margin:18px 0 8px}
 .email-login-panel input{box-sizing:border-box;width:100%;height:48px;background:#292f30;border:1px solid #485152;border-radius:10px;color:#fff;font:inherit;padding:0 14px;outline:0}
 .email-login-panel input:focus{background:#303738}
+.sketch-ui .email-login-panel input:focus-visible{outline:none;outline-offset:0}
 .email-login-address-row{display:flex;align-items:center;gap:10px;min-width:0}
 .email-login-address-row input{flex:1;min-width:0}
 .email-login-panel button{font:inherit;cursor:pointer}
@@ -43,6 +45,7 @@
 .email-logout-panel h2{margin:13px 40px 12px 0;font-size:25px;line-height:1.25}
 .email-logout-panel>p:not(.email-login-kicker){margin:0;color:#a7b0b0;line-height:1.5;font-size:14px}
 .email-logout-panel .email-login-close{position:absolute;right:20px;top:18px;width:32px;height:32px;border:1px solid #485152;border-radius:50%;background:#222829;color:#e8f1f0;font-size:22px;line-height:1;cursor:pointer}
+.sketch-ui .email-login-panel .email-login-close,.sketch-ui .email-logout-panel .email-login-close{box-sizing:border-box;width:32px;height:32px;min-height:32px;padding:0;display:grid;place-items:center;flex:none}
 .email-logout-panel .email-login-close:disabled{opacity:.5;cursor:not-allowed}
 .email-logout-actions{display:flex;gap:10px;margin-top:26px}
 .email-logout-actions button{flex:1;min-height:44px;border-radius:10px;font:inherit;font-size:14px;font-weight:700;cursor:pointer}

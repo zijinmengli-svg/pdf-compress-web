@@ -186,9 +186,9 @@ test("email and send code share one row without an extra focus border", async ()
     await page.getByRole("button", { name: "Sign in with email" }).click();
     const email = page.getByLabel("Email address");
     const send = page.getByRole("button", { name: "Send code" });
-    const before = await email.evaluate(el => ({ border: getComputedStyle(el).borderColor, outline: getComputedStyle(el).outlineWidth }));
+    const beforeBorder = await email.evaluate(el => getComputedStyle(el).borderColor);
     await email.fill("user@example.com");
-    const focused = await email.evaluate(el => ({ border: getComputedStyle(el).borderColor, outline: getComputedStyle(el).outlineWidth }));
+    const focused = await email.evaluate(el => ({ border: getComputedStyle(el).borderColor, outlineStyle: getComputedStyle(el).outlineStyle }));
     const inputBox = await email.boundingBox();
     const sendBox = await send.boundingBox();
     const dialogBox = await page.locator(".email-login-dialog").boundingBox();
@@ -196,7 +196,46 @@ test("email and send code share one row without an extra focus border", async ()
     assert.ok(sendBox.x > inputBox.x + inputBox.width, "send code should be to the right of email");
     assert.ok(Math.abs((inputBox.y + inputBox.height / 2) - (sendBox.y + sendBox.height / 2)) < 2, "email and send code should align vertically");
     assert.ok(sendBox.x + sendBox.width <= dialogBox.x + dialogBox.width, "send code should fit inside the dialog on mobile");
-    assert.deepEqual(focused, before, "focusing the email should not add or change the outer border");
+    assert.equal(focused.border, beforeBorder, "focusing the email should not change its border color");
+    assert.equal(focused.outlineStyle, "none", "focusing the email should not add a bright outer ring");
+  } finally { await page.close(); }
+});
+
+test("login and sign-out dialogs keep circular close controls", async () => {
+  for (const account of [null, { id: "account-1", email: "user@example.com" }]) {
+    const { page } = await pageWithAuth(account);
+    try {
+      await page.goto(base);
+      await page.getByRole("button", { name: account ? "My account" : "Sign in with email" }).click();
+      const close = page.locator("#email-login-close");
+      const dimensions = await close.evaluate(el => {
+        const box = el.getBoundingClientRect();
+        return { width: box.width, height: box.height };
+      });
+      assert.deepEqual(dimensions, { width: 32, height: 32 });
+      if (account) {
+        await page.getByRole("button", { name: "Sign out" }).click();
+        const confirmationClose = await page.locator("#email-logout-close").evaluate(el => {
+          const box = el.getBoundingClientRect();
+          return { width: box.width, height: box.height };
+        });
+        assert.deepEqual(confirmationClose, { width: 32, height: 32 });
+      }
+    } finally { await page.close(); }
+  }
+});
+
+test("focused login dialog has no bright outer outline", async () => {
+  const { page } = await pageWithAuth();
+  try {
+    await page.goto(base);
+    await page.getByRole("button", { name: "Sign in with email" }).click();
+    const dialog = page.locator(".email-login-dialog");
+    await page.keyboard.press("Tab");
+    await dialog.evaluate(el => el.focus());
+    const outline = await dialog.evaluate(el => ({ style: getComputedStyle(el).outlineStyle, focusVisible: el.matches(":focus-visible") }));
+    assert.equal(outline.focusVisible, true);
+    assert.equal(outline.style, "none");
   } finally { await page.close(); }
 });
 

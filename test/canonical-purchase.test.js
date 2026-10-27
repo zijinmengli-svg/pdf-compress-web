@@ -51,6 +51,22 @@ test("purchase intent requires a signed-in account, and settlement binds to its 
   await pool.end();
 });
 
+test("all advertised packs carry the verified account and exact selected quantity", async () => {
+  const { pool, login, wallet, purchases } = await setup();
+  for (const quantity of [1, 3, 5, 10]) {
+    const intent = purchases.createIntent({ walletHash: wallet.walletHash, accountId: login.account.id, quantity });
+    const claims = purchases.verifyIntent(intent.token);
+    assert.equal(intent.quantity, quantity);
+    assert.equal(claims.quantity, quantity);
+    assert.equal(claims.accountId, login.account.id);
+    assert.equal(claims.walletHash, wallet.walletHash);
+  }
+  for (const quantity of [0, 2, 11, "3"]) {
+    assert.throws(() => purchases.createIntent({ walletHash: wallet.walletHash, accountId: login.account.id, quantity }), /quantity/i);
+  }
+  await pool.end();
+});
+
 test("signed intent cannot credit another account or guest wallet", async () => {
   const { pool, login, wallet, purchases } = await setup();
   const intent = purchases.createIntent({ walletHash: "guest-wallet", accountId: login.account.id });

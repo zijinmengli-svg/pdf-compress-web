@@ -7,7 +7,8 @@
 ## Verified locally
 
 - Current production-login baseline `npm test`: pass.
-- New canonical account-wallet adapter: same verified account resolves to the same wallet; two accounts on a shared browser resolve to different wallets; forged/empty session cannot resolve a wallet; guest and account wallets cannot coincide. `node --test test/account-wallet.test.js`: 3/3 pass. The adapter is not yet wired to public payment routes.
+- New canonical account-wallet adapter: same verified account resolves to the same wallet; two accounts on a shared browser resolve to different wallets; forged/empty session cannot resolve a wallet; guest and account wallets cannot coincide. The additive mapping schema can be rerun without changing an active login or wallet in the `pg-mem` model. `node --test test/account-wallet.test.js`: 4/4 pass. The adapter is not yet wired to public payment routes.
+- Purchase settlement core now requires an account-bound signed intent and checks `account_wallets` rather than the preview-only `email_accounts`. Local tests cover a three-credit transaction, duplicate settlement, guest isolation and wrong-wallet rejection: 2/2 pass. The end-to-end purchase route and complete production schema are **not** integrated yet.
 - Old payment preview `npm test`: pass; Playwright preview suite: 25/25 pass. These are simulations, not actual Paddle transactions. The old payment branch now rejects sandbox/live credential prefix mismatches, but this fix remains isolated there.
 
 ## Blocking acceptance evidence

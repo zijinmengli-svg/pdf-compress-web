@@ -17,6 +17,7 @@ const { createBannerRoutes } = require("./lib/banner-routes");
 const { createEmailAuthService } = require("./lib/auth/service");
 const { createEmailSender } = require("./lib/auth/email-sender");
 const { createEmailAuthRoutes } = require("./lib/auth/routes");
+const { createPrepaidRoutes } = require("./lib/payment/prepaid-routes");
 const { validIndexNowKey } = require("./lib/indexnow");
 const { compressionTimeoutMs } = require("./lib/compression-timeout");
 const { gsTimeoutMsForBytes } = require("./lib/gs-timeout");
@@ -60,6 +61,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.randomBytes(32).toString("hex");
 const WEB_SESSION_SECRET = process.env.WEB_SESSION_SECRET || ADMIN_SESSION_SECRET;
 let emailAuthService = null;
+let prepaidRuntime = null;
 const ADMIN_COOKIE = "tinypdf_admin";
 const WEB_SESSION_COOKIE = "tinypdf_web_session";
 const INDEXNOW_KEY = validIndexNowKey(process.env.INDEXNOW_KEY) ? process.env.INDEXNOW_KEY : "";
@@ -966,9 +968,24 @@ const handleEmailAuthRequest = createEmailAuthRoutes({
   sendError,
   parseCookies,
 });
+const handlePrepaidRequest = createPrepaidRoutes({
+  getRuntime: () => prepaidRuntime,
+  resolveWallet: async (req, sessionToken) => {
+    if (!prepaidRuntime) throw new Error("Prepaid runtime is unavailable");
+    const guestWalletHash = crypto.createHmac("sha256", process.env.PAYMENT_IDENTITY_HASH_SECRET || "")
+      .update(`guest-wallet:${webSessionContext(req).value}`).digest("hex");
+    return prepaidRuntime.resolveWallet({ sessionToken, guestWalletHash });
+  },
+  website: validWebsiteRequest,
+  parseCookies,
+  readJson: readJsonBody,
+  json,
+  sendError,
+});
 async function handleApiRequest(req, res, url) {
   if (await handleBannerRequest(req, res, url)) return;
   if (await handleEmailAuthRequest(req, res, url)) return;
+  if (await handlePrepaidRequest(req, res, url)) return;
   if (url.pathname === "/api/config" && req.method === "GET") {
     let session = webSessionContext(req);
     let sessionCookie = "";

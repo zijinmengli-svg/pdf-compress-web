@@ -18,6 +18,7 @@ const { createEmailAuthService } = require("./lib/auth/service");
 const { createEmailSender } = require("./lib/auth/email-sender");
 const { createEmailAuthRoutes } = require("./lib/auth/routes");
 const { createPrepaidRoutes } = require("./lib/payment/prepaid-routes");
+const { createPrepaidWebhookRoute } = require("./lib/payment/prepaid-webhook-route");
 const { validIndexNowKey } = require("./lib/indexnow");
 const { compressionTimeoutMs } = require("./lib/compression-timeout");
 const { gsTimeoutMsForBytes } = require("./lib/gs-timeout");
@@ -982,10 +983,16 @@ const handlePrepaidRequest = createPrepaidRoutes({
   json,
   sendError,
 });
+const handlePrepaidWebhookRequest = createPrepaidWebhookRoute({
+  getRuntime: () => prepaidRuntime,
+  json,
+  sendError,
+});
 async function handleApiRequest(req, res, url) {
   if (await handleBannerRequest(req, res, url)) return;
   if (await handleEmailAuthRequest(req, res, url)) return;
   if (await handlePrepaidRequest(req, res, url)) return;
+  if (await handlePrepaidWebhookRequest(req, res, url)) return;
   if (url.pathname === "/api/config" && req.method === "GET") {
     let session = webSessionContext(req);
     let sessionCookie = "";

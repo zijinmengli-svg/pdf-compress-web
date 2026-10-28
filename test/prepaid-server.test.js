@@ -45,6 +45,11 @@ test("server mounts payment API closed without payment credentials, leaving comp
     });
     assert.equal(checkout.status, 503);
     assert.equal((await checkout.json()).code, "PAYMENT_UNAVAILABLE");
+    const webhook = await fetch(`${origin}/api/paddle/webhook`, {
+      method: "POST", headers: { "Content-Type": "application/json", "Paddle-Signature": "ts=1;h1=bad" }, body: "{}",
+    });
+    assert.equal(webhook.status, 503);
+    assert.equal((await webhook.json()).code, "PAYMENT_UNAVAILABLE");
   } finally {
     child.kill("SIGTERM");
     await new Promise(resolve => child.once("exit", resolve));

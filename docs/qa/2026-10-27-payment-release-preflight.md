@@ -12,11 +12,12 @@
 - A new additive prepaid schema references the deployed `auth_accounts` rather than preview `email_accounts`. Local `pg-mem` replay applies it twice while preserving an existing auth session, account-wallet binding and purchase row, and rejects a purchase for an unknown account. This is **not** a PostgreSQL migration/restart acceptance test.
 - Purchase settlement core now requires an account-bound signed intent and checks `account_wallets` rather than the preview-only `email_accounts`. Local tests cover all four signed pack quantities (1/3/5/10), a three-credit settlement, duplicate settlement, guest isolation, wrong-wallet rejection, unused-bundle refund freeze and partial-use refund refusal. The HTTP route is still standalone; checkout and the runtime are **not** integrated yet.
 - Prepaid-only webhook worker now dispatches completed transactions and refund adjustments without the preview's legacy paid-result path. Local fakes cover invalid-signature rejection, duplicate event ID, paid/refund dispatch and an unbound transaction retry. This is **not** a genuine Paddle-signed delivery test.
+- Official Paddle Node SDK 3.10.0 is installed behind a fail-closed adapter: sandbox/live API key prefixes must match, webhook verification uses the exact raw body, and refunds request a full adjustment to the original payment method. Adapter tests pass, and `npm audit --omit=dev` reports no production dependency vulnerabilities. This adapter is **not mounted in the server yet** and no real Paddle call has been made.
 - Old payment preview `npm test`: pass; Playwright preview suite: 25/25 pass. These are simulations, not actual Paddle transactions. The old payment branch now rejects sandbox/live credential prefix mismatches, but this fix remains isolated there.
 
 ## Blocking acceptance evidence
 
-No isolated staging `DATABASE_URL` or Paddle sandbox API key, client token and webhook secret are present in the local environment. Therefore no genuine checkout charge, signed webhook, sandbox refund or PostgreSQL migration/restart test has been completed. Do not substitute the production Neon database or live Paddle credentials for staging.
+No isolated staging `DATABASE_URL` or Paddle sandbox API key, client token and webhook secret are present in the local environment. Therefore no genuine checkout charge, signed webhook, sandbox refund or PostgreSQL migration/restart test has been completed. The Paddle live account-review and website-approval state is also unverified without a screenshot or authenticated dashboard access. Do not substitute the production Neon database or live Paddle credentials for staging.
 
 ## Remaining release gates
 

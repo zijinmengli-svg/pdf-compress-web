@@ -16,10 +16,11 @@ test("prepaid migrations run once under an advisory lock and never touch legacy 
   const pool = { connect: async () => client };
   await runPrepaidMigrations(pool);
   await runPrepaidMigrations(pool);
-  assert.deepEqual([...applied], ["prepaid-schema-v1", "prepaid-account-wallet-v1", "payment-orders-v1"]);
+  assert.deepEqual([...applied], ["prepaid-schema-v1", "prepaid-account-wallet-v1", "payment-orders-v1", "prepaid-ledger-freeze-v1"]);
   assert.equal(statements.filter(sql => sql.includes("CREATE TABLE IF NOT EXISTS account_wallets")).length, 1);
   assert.equal(statements.filter(sql => sql.includes("CREATE TABLE IF NOT EXISTS credit_purchases")).length, 1);
   assert.equal(statements.filter(sql => sql.includes("CREATE TABLE IF NOT EXISTS payment_orders")).length, 1);
+  assert.equal(statements.filter(sql => sql.includes("ADD CONSTRAINT reward_ledger_status_check")).length, 1);
   assert.equal(statements.filter(sql => sql.startsWith("SELECT pg_advisory_lock")).length, 2);
   assert.equal(statements.filter(sql => sql.startsWith("SELECT pg_advisory_unlock")).length, 2);
 });

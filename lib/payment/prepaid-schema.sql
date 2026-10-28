@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS reward_ledger (
   remaining_amount integer NOT NULL CHECK (remaining_amount >= 0 AND remaining_amount <= amount),
   expires_at timestamptz NOT NULL,
   source_key text NOT NULL UNIQUE,
-  status text NOT NULL CHECK (status IN ('active', 'consumed', 'expired', 'revoked')),
+  status text NOT NULL CHECK (status IN ('active', 'consumed', 'expired', 'frozen', 'revoked')),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS reward_ledger_events (
   id uuid PRIMARY KEY,
   wallet_id uuid NOT NULL REFERENCES reward_wallets(id) ON DELETE RESTRICT,
   ledger_id uuid REFERENCES reward_ledger(id) ON DELETE SET NULL,
-  event_type text NOT NULL CHECK (event_type IN ('granted', 'spent', 'expired', 'revoked')),
+  event_type text NOT NULL CHECK (event_type IN ('granted', 'spent', 'expired', 'frozen', 'restored', 'revoked')),
   amount integer NOT NULL CHECK (amount > 0),
   job_id text,
   idempotency_key text NOT NULL UNIQUE,

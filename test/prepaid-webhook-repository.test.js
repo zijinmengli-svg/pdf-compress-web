@@ -29,7 +29,7 @@ test("webhook repository deduplicates events and completes one claimed receipt",
   assert.equal(receipts.length, 1);
   assert.equal(receipts[0].event_id, "evt_one");
   assert.deepEqual(await repo.claimWebhookReceipts(5, new Date("2026-10-28T00:01:00Z"), pool), []);
-  await repo.completeWebhookReceipt("evt_one", { message: "processed" }, pool);
+  await repo.completeWebhookReceipt("evt_one", { message: "processed", leaseExpiresAt: receipts[0].lease_expires_at }, pool);
   assert.equal((await pool.query("SELECT processing_status FROM prepaid_webhook_receipts WHERE event_id = $1", ["evt_one"])).rows[0].processing_status, "processed");
   assert.deepEqual(await repo.claimWebhookReceipts(5, new Date("2026-10-28T00:02:00Z"), pool), []);
   await pool.end();
@@ -44,13 +44,19 @@ test("duplicate receipt reports inserted false when PostgreSQL returns no row", 
 test("failed receipt retries after delay; expired leases can be reclaimed", async () => {
   const { pool, repo } = await setup();
   await repo.enqueueWebhookReceipt({ eventId: "evt_retry", eventType: "transaction.completed", transactionId: "txn_retry", payloadHash: "hash" }, pool);
-  assert.equal((await repo.claimWebhookReceipts(1, new Date("2026-10-28T00:01:00Z"), pool)).length, 1);
-  await repo.retryWebhookReceipt("evt_retry", "safe_failure", new Date("2026-10-28T00:05:00Z"), pool);
+  const first = (await repo.claimWebhookReceipts(1, new Date("2026-10-28T00:01:00Z"), pool))[0];
+  assert.ok(first);
+  await repo.retryWebhookReceipt("evt_retry", "safe_failure", new Date("2026-10-28T00:05:00Z"), pool, first.lease_expires_at);
   assert.equal((await pool.query("SELECT processing_attempts FROM prepaid_webhook_receipts WHERE event_id = 'evt_retry'")).rows[0].processing_attempts, 1);
   assert.deepEqual(await repo.claimWebhookReceipts(1, new Date("2026-10-28T00:01:00Z"), pool), []);
   const futureRepo = createPrepaidWebhookRepository({ now: () => new Date("2026-10-28T00:05:01Z") });
   assert.equal((await futureRepo.claimWebhookReceipts(1, new Date("2026-10-28T00:06:00Z"), pool)).length, 1);
   const expiredRepo = createPrepaidWebhookRepository({ now: () => new Date("2026-10-28T00:06:01Z") });
-  assert.equal((await expiredRepo.claimWebhookReceipts(1, new Date("2026-10-28T00:07:00Z"), pool)).length, 1);
+  const replacement = (await expiredRepo.claimWebhookReceipts(1, new Date("2026-10-28T00:07:00Z"), pool))[0];
+  assert.ok(replacement);
+  await repo.completeWebhookReceipt("evt_retry", { message: "stale", leaseExpiresAt: first.lease_expires_at }, pool);
+  assert.equal((await pool.query("SELECT processing_status FROM prepaid_webhook_receipts WHERE event_id = 'evt_retry'")).rows[0].processing_status, "processing");
+  await expiredRepo.completeWebhookReceipt("evt_retry", { message: "processed", leaseExpiresAt: replacement.lease_expires_at }, pool);
+  assert.equal((await pool.query("SELECT processing_status FROM prepaid_webhook_receipts WHERE event_id = 'evt_retry'")).rows[0].processing_status, "processed");
   await pool.end();
 });

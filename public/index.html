@@ -17,7 +17,7 @@
     <meta name="twitter:description" content="Compress one PDF toward the target file size you need." />
     <title>TinyPDF Target Size PDF Compressor | Free Online Tool</title>
     <link rel="stylesheet" href="/styles.css" />
-    <link rel="stylesheet" href="/sketch-ui.css?v=8" />
+    <link rel="stylesheet" href="/sketch-ui.css?v=9" />
     <link rel="stylesheet" href="/email-login.css?v=4" />
     <link rel="canonical" href="https://tinypdf.cn/" />
     <link rel="alternate" hreflang="zh-CN" href="https://tinypdf.cn/zh/" />
@@ -37,7 +37,8 @@
       <header class="topbar">
         <a href="/" class="brand"><img src="/assets/sketch/TinyPDF@2x.png" alt="TinyPDF" width="96" height="24" /></a>
         <div class="topbar-actions">
-          <span class="quota-preview" title="Visual preview only; usage limits are not enabled">3 compressions left</span>
+          <span id="credit-balance" class="quota-preview" aria-live="polite" hidden></span>
+          <a id="credit-buy" class="credit-buy" href="/buy" hidden>Buy credits</a>
           <details class="language-menu"><summary>English</summary><nav><a href="/" aria-current="page">English</a><a href="/zh/" lang="zh-CN" hreflang="zh-CN">中文</a></nav></details>
           <button id="email-login-button" type="button" aria-label="Sign in with email">Login</button>
           <div class="usage-bar">
@@ -167,7 +168,8 @@
     <script src="/ad-slot.js?v=1.3.0" defer></script>
     <script src="/i18n.js?v=1.0.1" defer></script>
     <script src="/web-request.js?v=1.0.0" defer></script>
-    <script src="/app-simple.js?v=2.0.1" defer></script>
+    <script src="/credit-balance.js" defer></script>
+    <script src="/app-simple.js?v=2.0.2" defer></script>
     <script src="/sketch-ui.js?v=2.2.0" defer></script>
     <script src="/email-login.js?v=3" defer></script>
   <link rel="stylesheet" href="/site-banner.css?v=2" />

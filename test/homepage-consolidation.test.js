@@ -67,8 +67,9 @@ async function startServer() {
     assert.match(en.body, /class="portfolio-slide"[^>]+src="\/assets\/portfolio-spread\.webp"[^>]+hidden/);
     assert.match(en.body, /portfolio-spread\.webp"[^>]+loading="eager"/);
     assert.match(zh.body, /portfolio-spread\.webp"[^>]+loading="eager"/);
-    assert.match(en.body, /\/sketch-ui\.css\?v=8/);
-    assert.match(zh.body, /\/sketch-ui\.css\?v=8/);
+    const stylesheet = en.body.match(/href="(\/sketch-ui\.css\?v=\d+)"/)?.[1];
+    assert.ok(stylesheet);
+    assert.ok(zh.body.includes(`href="${stylesheet}"`));
     assert.match(en.body, /class="portfolio-dot"[^>]+data-slide="0"[^>]+aria-pressed="true"/);
     assert.match(en.body, /class="portfolio-dot"[^>]+data-slide="1"[^>]+aria-pressed="false"/);
     assert.doesNotMatch(en.body, /class="portfolio-secondary"/);
@@ -97,7 +98,7 @@ async function startServer() {
     assert.strictEqual(secondImage.status, 200);
     const background = await get("/assets/sketch/bg@2x.png?v=2");
     assert.strictEqual(background.status, 200);
-    const css = await get("/sketch-ui.css?v=8");
+    const css = await get(stylesheet);
     assert.match(css.body, /background:#121212 url\('\/assets\/sketch\/bg@2x\.png\?v=2'\)/);
 
     const sitemap = await get("/sitemap.xml");

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>购买压缩次数 – TinyPDF</title>
+  <link rel="stylesheet" href="/email-login.css?v=4">
+  <link rel="stylesheet" href="/checkout.css?v=2">
+  <script defer src="/checkout.js?v=2"></script>
+  <script defer src="/email-login.js?v=4"></script>
+</head>
+<body class="checkout-page sketch-ui">
+  <header class="checkout-nav">
+    <a href="/zh/">TinyPDF</a>
+    <nav aria-label="账户和语言">
+      <a id="checkout-language" href="/buy">English</a>
+      <button id="email-login-button" type="button">登录</button>
+    </nav>
+  </header>
+  <main class="checkout-main">
+    <section class="checkout-panel" aria-labelledby="checkout-title">
+      <a class="checkout-close" aria-label="关闭并返回首页" href="/zh/">×</a>
+      <h1 id="checkout-title">购买压缩次数</h1>
+      <p>一次性购买，无自动续费。次数绑定邮箱账户，仅在压缩成功时扣除。</p>
+      <fieldset id="checkout-packs"><legend>选择次数</legend>
+        <label><input name="pack" type="radio" value="1" checked> 1 次</label>
+        <label><input name="pack" type="radio" value="3"> 3 次</label>
+        <label><input name="pack" type="radio" value="5"> 5 次</label>
+        <label><input name="pack" type="radio" value="10"> 10 次</label>
+      </fieldset>
+      <p id="checkout-price" class="checkout-price" aria-live="polite"></p>
+      <p>以上为参考总价，不含可能适用的税费。最终金额和可用支付方式以结账页为准。</p>
+      <button id="checkout-buy" type="button" disabled>购买 1 次</button>
+      <p id="checkout-message" role="status"></p>
+      <section id="checkout-order" hidden aria-label="订单信息">
+        <dl>
+          <dt>订单编号</dt><dd id="checkout-order-id"></dd>
+          <dt>交易编号</dt><dd id="checkout-transaction"></dd>
+        </dl>
+        <button id="checkout-refresh" type="button">查询订单状态</button>
+        <p id="checkout-check-feedback" role="status" aria-live="polite"></p>
+      </section>
+      <a href="/refund">退款政策</a>
+    </section>
+  </main>
+</body>
+</html>

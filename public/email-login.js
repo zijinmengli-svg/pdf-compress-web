@@ -46,6 +46,7 @@
   function updateButton() {
     button.textContent = account ? text("我的账户", "My account") : text("登录", "Login");
     button.setAttribute("aria-label", account ? text("我的账户", "My account") : text("邮箱登录", "Sign in with email"));
+    window.dispatchEvent(new CustomEvent("tinypdf:auth-changed", { detail: { authenticated: Boolean(account) } }));
   }
 
   async function refresh() {

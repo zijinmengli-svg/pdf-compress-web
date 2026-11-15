@@ -8,6 +8,10 @@
 .sketch-ui .brand{display:flex}.sketch-ui .brand img{width:96px;height:24px}
 .sketch-ui .topbar-actions{display:flex;align-items:center;gap:40px;width:auto;flex-shrink:0}
 .sketch-ui .quota-preview{color:#ccc;font-size:14px}
+.sketch-ui .credit-buy{border:1px solid #394444;border-radius:16px;padding:5px 12px;color:#64e2d1;text-decoration:none;white-space:nowrap;font-size:13px}
+.sketch-ui .credit-buy[hidden],.sketch-ui #credit-balance[hidden]{display:none!important}
+.sketch-ui #credit-balance:not([hidden]){display:inline;white-space:nowrap}
+@media(max-width:600px){.sketch-ui .topbar-actions:has(#credit-balance:not([hidden])){flex-wrap:wrap;justify-content:flex-end}.sketch-ui #credit-balance:not([hidden]){order:1}}
 .sketch-ui .usage-bar,.sketch-ui .lead,.sketch-ui #config-bar{display:none}
 .sketch-ui .language-menu{position:relative;font-size:14px;z-index:3}
 .sketch-ui .language-menu summary{cursor:pointer;border:1px solid #303338;border-radius:18px;padding:7px 12px;list-style:none}

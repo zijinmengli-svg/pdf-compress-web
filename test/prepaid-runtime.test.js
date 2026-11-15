@@ -4,6 +4,27 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const { newDb } = require("pg-mem");
 const { createPrepaidRuntime } = require("../lib/payment/prepaid-runtime");
+const fs = require("node:fs");
+
+test("runtime connects persistent generic orders to the authenticated TinyPDF adapter", async () => {
+  const pool = new (newDb({ noAstCoverageCheck: true }).adapters.createPg().Pool)();
+  await pool.query("CREATE TABLE auth_accounts(id uuid PRIMARY KEY,email text NOT NULL)");
+  for (const file of ["prepaid-schema.sql", "account-wallet-schema.sql", "payment-schema.sql"]) {
+    await pool.query(fs.readFileSync(require.resolve(`../lib/payment/${file}`), "utf8"));
+  }
+  const id = "00000000-0000-4000-8000-000000000001";
+  await pool.query("INSERT INTO auth_accounts(id,email) VALUES ($1,'test@example.com')", [id]);
+  const runtime = createPrepaidRuntime({ pool, authService: { getSession: async () => ({ account: { id } }) },
+    config: { enabled: false, ready: true, environment: "sandbox", priceId: "pri_test", productId: "pro_test", identityHashSecret: "wallet-secret", webSessionSecret: "intent-secret" },
+    paddle: {} });
+  const wallet = await runtime.resolveWallet({ sessionToken: "session", guestWalletHash: "guest" });
+  const intent = await runtime.orders.prepareCheckout({ productKey: "tinypdf", offerKey: "compression-credit", quantity: 3,
+    subject: { namespace: "tinypdf", id, walletHash: wallet.walletHash } });
+  assert.match(intent.orderId, /^ord_/);
+  assert.equal((await runtime.orders.getOrder({ orderId: intent.orderId, subject: { namespace: "tinypdf", id } })).status, "pending");
+  assert.equal(runtime.enabled, false);
+  await pool.end();
+});
 
 test("prepaid runtime maps the existing email account to one isolated wallet", async () => {
   const db = newDb({ noAstCoverageCheck: true });

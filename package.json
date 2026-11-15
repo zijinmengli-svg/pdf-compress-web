@@ -7,6 +7,9 @@
   "license": "UNLICENSED",
   "main": "server-simple.js",
   "scripts": {
+    "test:payment:postgres": "node test/payment-postgres-acceptance.js",
+    "test:payment:browser": "PAYMENT_BROWSER_ACCEPTANCE=1 node test/compression-regression.test.js",
+    "test:payment": "node --test test/payment-*.test.js test/daily-free-credit.test.js test/prepaid-*.test.js test/canonical-purchase.test.js test/account-wallet.test.js test/paddle-*.test.js",
     "start": "node server-simple.js",
     "dev": "node server-simple.js",
     "test": "node test/web-session.test.js && node test/web-access-guard.test.js && node test/web-request.test.js && node test/job-events-ui.test.js && node test/i18n.test.js && node test/p0-ai-discovery.test.js && node test/homepage-consolidation.test.js && node test/indexnow.test.js && node test/compress-search.test.js && node test/compression-timeout.test.js && node test/gs-timeout.test.js && node test/compression-regression.test.js && node test/process-runner.test.js && node test/analytics-processing.test.js && node test/ads.test.js && node test/pageview-filter.test.js && node test/analytics-store.test.js && node test/analytics-admin.test.js && node test/download-name.test.js && node test/admin-assets.test.js && node test/admin-navigation.test.js && node test/admin-banner-ui.test.js && node test/banner.test.js && node test/banner-routes.test.js && node --test test/email-auth.test.js test/email-auth-routes.test.js test/email-auth-server.test.js test/email-login-ui.test.js test/account-wallet.test.js test/canonical-purchase.test.js test/paddle-config.test.js test/prepaid-webhook.test.js test/prepaid-routes.test.js test/prepaid-schema.test.js test/prepaid-ledger.test.js test/paddle-client.test.js test/prepaid-webhook-repository.test.js test/prepaid-runtime.test.js test/prepaid-migrations.test.js test/prepaid-server.test.js test/prepaid-webhook-route.test.js",

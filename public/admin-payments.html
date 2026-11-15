@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>支付管理 – TinyPDF</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/admin-payments.css">
+  <script defer src="/admin-payments.js"></script>
+</head>
+<body class="admin-page">
+  <main class="payment-admin">
+    <a href="/admin">← 返回数据后台</a>
+    <h1>支付管理</h1>
+    <form id="payment-search">
+      <label>邮箱、订单号或交易编号<input name="q" type="search" maxlength="254" autocomplete="off"></label>
+      <label>起始日期（北京时间）<input name="from" type="date"></label>
+      <label>结束日期（北京时间）<input name="to" type="date"></label>
+      <button type="submit">搜索</button>
+    </form>
+    <p id="payment-message" role="status"></p>
+    <p id="payment-login" hidden><a href="/admin">前往后台登录</a></p>
+    <div class="payment-table" hidden>
+      <table>
+        <caption>最近 100 条匹配订单</caption>
+        <thead><tr><th>时间</th><th>邮箱</th><th>订单号</th><th>购买次数</th><th>实付</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody id="payment-orders"></tbody>
+      </table>
+    </div>
+    <dialog id="payment-detail" aria-labelledby="payment-detail-title">
+      <h2 id="payment-detail-title">订单详情</h2>
+      <dl id="payment-detail-fields"></dl>
+      <form id="payment-refund-form" hidden>
+        <label>退款原因<select name="reason" required>
+          <option value="">请选择</option>
+          <option value="duplicate">重复付款</option>
+          <option value="service_not_delivered">服务未交付</option>
+          <option value="other">其他</option>
+        </select></label>
+        <label><input name="confirm" type="checkbox" required> 确认申请全额原路退款。仅未使用的次数包可自动退款。</label>
+        <button type="submit">确认申请退款</button>
+      </form>
+      <p id="payment-detail-message" role="status"></p>
+      <button type="button" id="payment-detail-close">关闭</button>
+    </dialog>
+  </main>
+</body>
+</html>

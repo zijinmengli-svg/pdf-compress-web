@@ -1,0 +1,25 @@
+* { box-sizing: border-box; }
+.checkout-page { margin: 0; min-height: 100vh; background: #121212; color: #f3f5f5; font-family: system-ui, sans-serif; }
+.checkout-page [hidden] { display: none !important; }
+.checkout-page a { color: #ace2db; }
+.checkout-nav { max-width: 1280px; margin: auto; display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; }
+.checkout-nav > a { color: inherit; font-size: 24px; font-weight: 700; text-decoration: none; }
+.checkout-nav nav { display: flex; align-items: center; gap: 16px; }
+.checkout-main { max-width: 780px; margin: 42px auto; padding: 0 20px; }
+.checkout-panel { position: relative; padding: clamp(22px, 5vw, 44px); border: 1px solid #394444; border-radius: 24px; background: #181d1d; }
+.checkout-panel h1 { padding-right: 40px; margin-top: 0; }
+.checkout-panel p { color: #a9b5b4; line-height: 1.65; }
+.checkout-close { position: absolute; inset: 16px 16px auto auto; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; border: 1px solid #394444; text-decoration: none; font-size: 24px; }
+#checkout-packs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; border: 0; padding: 0; margin: 22px 0; }
+#checkout-packs legend { margin-bottom: 10px; }
+#checkout-packs label { padding: 12px; border: 1px solid #394444; border-radius: 12px; cursor: pointer; }
+#checkout-packs label:has(input:checked) { border-color: #2cc8b7; background: #213231; }
+#checkout-packs input { accent-color: #2cc8b7; }
+#checkout-buy, #checkout-refresh { border: 1px solid transparent; padding: 11px 18px; border-radius: 10px; cursor: pointer; font: inherit; }
+#checkout-buy { background: #2cc8b7; color: #07201c; font-weight: 650; }
+#checkout-refresh { background: #252d2d; color: inherit; border-color: #465353; margin-bottom: 16px; }
+#checkout-buy:disabled { opacity: .45; cursor: default; }
+#checkout-order dd { margin: 4px 0 12px; overflow-wrap: anywhere; font-family: monospace; }
+.checkout-panel .checkout-price { color: #d8f7f1; font-weight: 650; }
+#checkout-check-feedback:empty { display: none; }
+#checkout-refresh:disabled { opacity: .65; cursor: progress; }

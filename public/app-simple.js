@@ -272,6 +272,10 @@ async function submitCompression(body) {
     },
   });
   if (!response.ok) {
+    if (payload.code === "COMPRESSION_CREDITS_REQUIRED") {
+      window.TinyPDFCreditBalance?.refresh();
+      throw new Error(i18n.language === "zh-CN" ? "可用压缩次数已用完。" : "No compression credits remaining.");
+    }
     throw new Error(
       payload.code === "WEBSITE_SESSION_REQUIRED" || payload.code === "JOB_ACCESS_DENIED"
         ? t("websiteSessionRequired")
@@ -303,6 +307,7 @@ async function submitCompression(body) {
       activeEvents.close();
       activeEvents = null;
       resetSubmitButton();
+      window.TinyPDFCreditBalance?.refresh();
     }
   };
   activeEvents.onerror = () => {
@@ -474,6 +479,7 @@ async function initConfig() {
     const res = await fetch("/api/config");
     if (res.ok) {
       const cfg = await res.json();
+      window.TinyPDFCreditBalance?.configure(cfg.payment);
       if (typeof cfg.adsEnabled  === "boolean") ADS_ENABLED   = cfg.adsEnabled;
       if (typeof cfg.adClient    === "string")  AD_CLIENT     = cfg.adClient;
       if (typeof cfg.adSlot      === "string")  AD_SLOT       = cfg.adSlot;

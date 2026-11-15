@@ -34,7 +34,10 @@ test("server mounts payment API closed without payment credentials, leaving comp
     const headers = { Cookie: cookie, Origin: origin, "User-Agent": "Mozilla/5.0", "Sec-Fetch-Site": "same-origin" };
     const config = await fetch(`${origin}/api/config`, { headers });
     assert.equal(config.status, 200);
-    const webRequestToken = (await config.json()).webRequestToken;
+    const publicConfig = await config.json();
+    const webRequestToken = publicConfig.webRequestToken;
+    assert.deepEqual(publicConfig.payment, { enabled: false, status: "unavailable", quantities: [1, 3, 5, 10],
+      freePolicy: { dailyCredits: 1, resetHour: 2, timezone: "Asia/Shanghai", accumulates: false } });
     assert.ok(webRequestToken);
     const payments = await fetch(`${origin}/api/credits/purchases`, { headers });
     assert.equal(payments.status, 503);

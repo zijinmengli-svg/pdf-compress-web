@@ -1,0 +1,30 @@
+"use strict";
+const { test } = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const { newDb } = require("pg-mem");
+const { createPrepaidLedger } = require("../lib/payment/prepaid-ledger");
+
+test("daily free credit resets at Beijing 02:00, never accumulates, and precedes paid credit", async () => {
+  const pool = new (newDb({ noAstCoverageCheck: true }).adapters.createPg().Pool)();
+  await pool.query("CREATE TABLE auth_accounts (id uuid PRIMARY KEY)");
+  await pool.query(fs.readFileSync(require.resolve("../lib/payment/prepaid-schema.sql"), "utf8"));
+  let instant = new Date("2026-11-11T17:59:59.999Z");
+  const ledger = createPrepaidLedger({ pool, now: () => instant });
+  const wallet = await ledger.ensureWallet({ walletHash: "daily-user" });
+  await ledger.grantPurchasedCredit({ walletId: wallet.id, transactionId: "txn_daily", quantity: 3, expiresAt: new Date("9999-12-31") });
+  await ledger.ensureDailyFreeCredit({ walletHash: "daily-user" });
+  await ledger.ensureDailyFreeCredit({ walletHash: "daily-user" });
+  assert.equal((await ledger.getBalance({ walletHash: "daily-user" })).available, 4);
+  await ledger.consumeSuccessfulJob({ walletHash: "daily-user", jobId: "one" });
+  await ledger.ensureDailyFreeCredit({ walletHash: "daily-user" });
+  assert.equal((await ledger.getBalance({ walletHash: "daily-user" })).available, 3);
+  assert.equal((await pool.query("SELECT remaining_amount FROM reward_ledger WHERE source_key='purchase:txn_daily'")).rows[0].remaining_amount, 3);
+  instant = new Date("2026-11-11T18:00:00.000Z");
+  await ledger.ensureDailyFreeCredit({ walletHash: "daily-user" });
+  assert.equal((await ledger.getBalance({ walletHash: "daily-user" })).available, 4);
+  instant = new Date("2026-11-14T18:00:00.000Z");
+  await ledger.ensureDailyFreeCredit({ walletHash: "daily-user" });
+  assert.equal((await ledger.getBalance({ walletHash: "daily-user" })).available, 4);
+  await pool.end();
+});

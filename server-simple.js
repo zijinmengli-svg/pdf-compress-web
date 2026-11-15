@@ -18,7 +18,10 @@ const { createEmailAuthService } = require("./lib/auth/service");
 const { createEmailSender } = require("./lib/auth/email-sender");
 const { createEmailAuthRoutes } = require("./lib/auth/routes");
 const { createPrepaidRoutes } = require("./lib/payment/prepaid-routes");
+const { createPaymentAdminRoutes } = require("./lib/payment/admin-routes");
 const { createPrepaidWebhookRoute } = require("./lib/payment/prepaid-webhook-route");
+const { loadPaymentConfig } = require("./lib/payment/config");
+const { startPaymentRuntime } = require("./lib/payment/startup");
 const { validIndexNowKey } = require("./lib/indexnow");
 const { compressionTimeoutMs } = require("./lib/compression-timeout");
 const { gsTimeoutMsForBytes } = require("./lib/gs-timeout");
@@ -204,6 +207,24 @@ function makeWebSessionCookie(req, value) {
   const host = req.headers.host || "";
   const secure = /(^|\.)tinypdf\.cn(?::\d+)?$/i.test(host) || req.headers["x-forwarded-proto"] === "https";
   return `${WEB_SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; Max-Age=${Math.floor(WEB_SESSION_MAX_AGE_MS / 1000) + 3600}; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+}
+
+const QUOTA_DEVICE_COOKIE = "tinypdf_quota_device";
+function quotaDeviceSignature(value) {
+  return crypto.createHmac("sha256", process.env.PAYMENT_IDENTITY_HASH_SECRET)
+    .update(`quota-device-cookie:${value}`).digest("hex");
+}
+function readQuotaDevice(req) {
+  const raw = parseCookies(req)[QUOTA_DEVICE_COOKIE] || "";
+  const match = /^([a-f0-9-]{36})\.([a-f0-9]{64})$/.exec(raw);
+  if (!match) return "";
+  const expected = quotaDeviceSignature(match[1]);
+  return crypto.timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(match[2], "hex")) ? match[1] : "";
+}
+function makeQuotaDeviceCookie(req, sid) {
+  const host = req.headers.host || "";
+  const secure = /(^|\.)tinypdf\.cn(?::\d+)?$/i.test(host) || req.headers["x-forwarded-proto"] === "https";
+  return `${QUOTA_DEVICE_COOKIE}=${sid}.${quotaDeviceSignature(sid)}; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
 }
 
 function internalReferrer(req) {
@@ -665,7 +686,7 @@ function generateJobId() {
 }
 
 // ── 安全响应头 ──────────────────────────────────────────────────────────────
-function setSecurityHeaders(res) {
+function setSecurityHeaders(res, allowCheckout = false) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -678,10 +699,13 @@ function setSecurityHeaders(res) {
     ? " https://*.googlesyndication.com https://*.google.com https://*.doubleclick.net"
     : "";
   const adImg = AD_ENABLED_CFG ? " https:" : "";
+  const paddleScript = allowCheckout ? " https://cdn.paddle.com" : "";
+  const paddleFrame = allowCheckout ? " https://buy.paddle.com https://sandbox-buy.paddle.com" : "";
+  const paddleConnect = allowCheckout ? " https://*.paddle.com" : "";
   res.setHeader(
     "Content-Security-Policy",
-    `default-src 'self'; script-src 'self'${adScript}; style-src 'self' 'unsafe-inline'; ` +
-    `img-src 'self' data:${adImg}; frame-src 'self'${adFrame}; connect-src 'self'${adScript}; ` +
+    `default-src 'self'; script-src 'self'${adScript}${paddleScript}; style-src 'self' 'unsafe-inline'; ` +
+    `img-src 'self' data:${adImg}; frame-src 'self'${adFrame}${paddleFrame}; connect-src 'self'${adScript}${paddleConnect}; ` +
     `object-src 'none'; frame-ancestors 'none'`
   );
 }
@@ -846,6 +870,19 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     }
     const reachedTarget    = resultBytes <= targetBytes;
     const noCompressNeeded = resultBytes >= originalBytes; // 已回退原文件：目标 ≥ 原文件
+    if (job.creditReservation) {
+      if (controller.signal.aborted) {
+        throw Object.assign(new Error("Compression timed out"), { code: "COMPRESSION_TIMEOUT" });
+      }
+      if (!belowRange && !noCompressNeeded && !(await checkPdf(outputPath)).valid) {
+        throw new Error("The compressed PDF is invalid. Please try again.");
+      }
+      if (controller.signal.aborted) {
+        throw Object.assign(new Error("Compression timed out"), { code: "COMPRESSION_TIMEOUT" });
+      }
+      await prepaidRuntime.quota.finish(job.creditReservation, !belowRange && !noCompressNeeded);
+      delete job.creditReservation;
+    }
     job.state.progress     = 1;
     job.state.status       = belowRange ? "below_range" : "done";
     job.state.message      = belowRange
@@ -888,7 +925,11 @@ async function compressPdf(jobId, inputPath, targetBytes, originalName) {
     }).catch(() => {});
 
   } catch (error) {
-    const timedOut = error && ["ETIMEDOUT", "ABORT_ERR"].includes(error.code);
+    if (job.creditReservation) {
+      try { await prepaidRuntime.quota.finish(job.creditReservation, false); }
+      catch { console.error("compression_credit_release_failed", { jobId }); }
+    }
+    const timedOut = controller.signal.aborted || error && ["ETIMEDOUT", "ABORT_ERR", "COMPRESSION_TIMEOUT"].includes(error.code);
     const reason = String(error && error.message || "Compression failed");
     const errorCode = timedOut ? "COMPRESSION_TIMEOUT" :
       error && ["TARGET_RANGE_TOO_SMALL", "TARGET_RANGE_TOO_LARGE"].includes(error.code)
@@ -983,16 +1024,41 @@ const handlePrepaidRequest = createPrepaidRoutes({
   json,
   sendError,
 });
+async function compressionIdentity(req, sessionClaims) {
+  const deviceId = readQuotaDevice(req) || sessionClaims.sid;
+  const guestHash = crypto.createHmac("sha256", process.env.PAYMENT_IDENTITY_HASH_SECRET)
+    .update(`compression-device:${deviceId}`).digest("hex");
+  const sessionToken = parseCookies(req).tinypdf_account;
+  const session = sessionToken && await prepaidRuntime.authService.getSession(sessionToken);
+  if (!session?.account) return { guestHash };
+  const { accountId, walletHash } = await prepaidRuntime.resolveWallet({ sessionToken, guestWalletHash: guestHash });
+  return { guestHash, accountId, walletHash };
+}
 const handlePrepaidWebhookRequest = createPrepaidWebhookRoute({
   getRuntime: () => prepaidRuntime,
+  json,
+  sendError,
+});
+const handlePaymentAdminRequest = createPaymentAdminRoutes({
+  getRuntime: () => prepaidRuntime,
+  isAdmin: req => Boolean(ADMIN_PASSWORD && hasValidAdminSession(req)),
+  sameOrigin: isSameOriginRequest,
+  allowRefunds: runtime => runtime.enabled && process.env.PAYMENT_ADMIN_REFUNDS_ENABLED === "true",
+  readJson: readJsonBody,
   json,
   sendError,
 });
 async function handleApiRequest(req, res, url) {
   if (await handleBannerRequest(req, res, url)) return;
   if (await handleEmailAuthRequest(req, res, url)) return;
+  if (prepaidRuntime?.testQuotaEnabled && url.pathname === "/api/credits/balance" && req.method === "GET") {
+    const session = validWebsiteRequest(req, false);
+    if (!session) return rejectWebsiteSession(res);
+    return json(res, 200, await prepaidRuntime.quota.balance(await compressionIdentity(req, session.claims)));
+  }
   if (await handlePrepaidRequest(req, res, url)) return;
   if (await handlePrepaidWebhookRequest(req, res, url)) return;
+  if (await handlePaymentAdminRequest(req, res, url)) return;
   if (url.pathname === "/api/config" && req.method === "GET") {
     let session = webSessionContext(req);
     let sessionCookie = "";
@@ -1015,6 +1081,11 @@ async function handleApiRequest(req, res, url) {
       session = renewed;
       sessionCookie = makeWebSessionCookie(req, renewed.value);
     }
+    const cookies = sessionCookie ? [sessionCookie] : [];
+    if (prepaidRuntime?.testQuotaEnabled && session.claims &&
+        isSameOriginRequest(req) && !isAutomatedUserAgent(req.headers["user-agent"]) && !readQuotaDevice(req)) {
+      cookies.push(makeQuotaDeviceCookie(req, session.claims.sid));
+    }
     json(res, 200, {
       largeFileMB: LARGE_FILE_MB,
       adsEnabled:  AD_ENABLED_CFG,
@@ -1022,10 +1093,19 @@ async function handleApiRequest(req, res, url) {
       adSlot:      AD_SLOT_CFG,
       maxUploadMB: MAX_UPLOAD_MB,
       gsVersion:   GS_VERSION,
+      payment: {
+        enabled: Boolean(prepaidRuntime && prepaidRuntime.enabled),
+        status: !prepaidRuntime ? "unavailable" : prepaidRuntime.enabled ? "enabled" : "disabled",
+        quantities: [1, 3, 5, 10],
+        freePolicy: { dailyCredits: 1, resetHour: 2, timezone: "Asia/Shanghai", accumulates: false },
+        ...(prepaidRuntime?.testQuotaEnabled ? { quotaEnabled: true } : {}),
+        ...(prepaidRuntime?.enabled && prepaidRuntime.checkout
+          ? { checkout: prepaidRuntime.checkout, referenceUnitMinor: prepaidRuntime.referenceUnitMinor } : {}),
+      },
       webRequestToken: session.claims && !isAutomatedUserAgent(req.headers["user-agent"])
         ? requestTokenFor(session.value, WEB_SESSION_SECRET)
         : "",
-    }, sessionCookie ? { "Set-Cookie": sessionCookie } : {});
+    }, cookies.length ? { "Set-Cookie": cookies } : {});
     return;
   }
 
@@ -1205,7 +1285,21 @@ async function handleApiRequest(req, res, url) {
       });
       const jobAccess = createJobAccess(websiteSession.claims);
 
-      await fsp.writeFile(inputPath, pdfPart.content);
+      let creditReservation;
+      if (prepaidRuntime?.testQuotaEnabled) {
+        const identity = await compressionIdentity(req, websiteSession.claims);
+        creditReservation = await prepaidRuntime.quota.reserve(identity, jobId);
+        if (!creditReservation) {
+          sendError(res, 402, "COMPRESSION_CREDITS_REQUIRED", "No compression credits are available");
+          return;
+        }
+      }
+      try {
+        await fsp.writeFile(inputPath, pdfPart.content);
+      } catch (error) {
+        if (creditReservation) await prepaidRuntime.quota.finish(creditReservation, false);
+        throw error;
+      }
 
       // 服务端记录每次上传的大小：从服务器直发 GA，不受客户端网络/cookie 影响，size 维度可靠。
       // 用于后期评估"大文件需求是否足够多 → 是否值得花钱升级服务器 / 上付费档"。
@@ -1245,6 +1339,7 @@ async function handleApiRequest(req, res, url) {
 
       const job = {
         id: jobId,
+        creditReservation,
         inputPath,
         outputPath,
         originalName: pdfPart.filename,
@@ -1490,7 +1585,8 @@ async function handleStatic(req, res, url) {
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || "application/octet-stream";
 
-    setSecurityHeaders(res);
+    setSecurityHeaders(res, Boolean(prepaidRuntime?.enabled && prepaidRuntime.checkout &&
+      ["/buy.html", "/zh/buy.html"].includes(pathname)));
 
     // 真实浏览器访问首页：在写响应头之前解析/分配稳定 client_id（新访客种第一方 cookie），
     // 供服务端 page_view 上报使用，修正国内用户因无 _ga cookie 每次被算作新用户的问题。
@@ -1565,6 +1661,28 @@ async function main() {
       await service.ready();
       emailAuthService = service;
       console.log("TinyPDF email login ready");
+      try {
+        // Reconcile existing orders independently of the new-purchase switch.
+        // Keep purchases closed until the job/UI release gate is completed.
+        const paymentConfig = { ...loadPaymentConfig(), enabled: false };
+        const localQuotaRequested = process.env.TINYPDF_LOCAL_QUOTA_TEST === "true" &&
+          HOST === "127.0.0.1" && paymentConfig.environment === "sandbox";
+        let database = null;
+        if (localQuotaRequested) {
+          try { database = new URL(process.env.DATABASE_URL); } catch {}
+        }
+        const localQuotaTest = Boolean(database && database.hostname === "127.0.0.1" &&
+          /^\/tinypdf_test(?:_[a-z0-9_]+)?$/.test(database.pathname) && !database.search);
+        if (localQuotaTest) paymentConfig.quotaLeaseMs = COMPRESSION_TIMEOUT_MS + 120_000;
+        prepaidRuntime = await startPaymentRuntime({ config: paymentConfig, pool, authService: service,
+          onError: code => console.error(code) });
+        if (prepaidRuntime) {
+          prepaidRuntime.testQuotaEnabled = localQuotaTest;
+          console.log("TinyPDF payment reconciliation ready; new purchases disabled");
+        }
+      } catch {
+        console.error("TinyPDF payment initialization unavailable; email login remains enabled");
+      }
     } catch {
       console.error("TinyPDF email login unavailable; compression remains enabled");
       await pool.end();

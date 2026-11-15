@@ -52,9 +52,10 @@ test("Paddle adapter rejects mixed environment credentials", () => {
 test("installed Paddle SDK accepts a locally signed raw payload and rejects tampering", async () => {
   const secret = "isolated-test-secret";
   const body = JSON.stringify({ event_id: "evt_local", event_type: "tinypdf.local_test", data: { id: "txn_local" } });
+  // Load the SDK before signing: cold module loading can exceed its five-second validity window.
+  const client = createPaddleClient({ apiKey: "pdl_sdbx_apikey_local", environment: "sandbox", webhookSecret: secret });
   const ts = Math.floor(Date.now() / 1000);
   const h1 = crypto.createHmac("sha256", secret).update(`${ts}:${body}`).digest("hex");
-  const client = createPaddleClient({ apiKey: "pdl_sdbx_apikey_local", environment: "sandbox", webhookSecret: secret });
   const event = await client.verifyWebhook(body, `ts=${ts};h1=${h1}`);
   assert.equal(event.eventId, "evt_local");
   await assert.rejects(client.verifyWebhook(body.replace("txn_local", "txn_other"), `ts=${ts};h1=${h1}`), /signature/i);

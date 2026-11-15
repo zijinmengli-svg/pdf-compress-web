@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Buy compression credits – TinyPDF</title>
+  <link rel="stylesheet" href="/email-login.css?v=4">
+  <link rel="stylesheet" href="/checkout.css?v=2">
+  <script defer src="/checkout.js?v=2"></script>
+  <script defer src="/email-login.js?v=4"></script>
+</head>
+<body class="checkout-page sketch-ui">
+  <header class="checkout-nav">
+    <a href="/">TinyPDF</a>
+    <nav aria-label="Account and language">
+      <a id="checkout-language" href="/zh/buy">中文</a>
+      <button id="email-login-button" type="button">Login</button>
+    </nav>
+  </header>
+  <main class="checkout-main">
+    <section class="checkout-panel" aria-labelledby="checkout-title">
+      <a class="checkout-close" aria-label="Close and return home" href="/">×</a>
+      <h1 id="checkout-title">Buy compression credits</h1>
+      <p>One-time purchase. No auto-renewal. Credits are linked to your email account and used only on successful compressions.</p>
+      <fieldset id="checkout-packs"><legend>Choose a pack</legend>
+        <label><input name="pack" type="radio" value="1" checked> 1 compression</label>
+        <label><input name="pack" type="radio" value="3"> 3 compressions</label>
+        <label><input name="pack" type="radio" value="5"> 5 compressions</label>
+        <label><input name="pack" type="radio" value="10"> 10 compressions</label>
+      </fieldset>
+      <p id="checkout-price" class="checkout-price" aria-live="polite"></p>
+      <p>Reference total before any applicable tax. Final price, taxes, and payment methods are shown at checkout.</p>
+      <button id="checkout-buy" type="button" disabled>Buy 1 compression</button>
+      <p id="checkout-message" role="status"></p>
+      <section id="checkout-order" hidden aria-label="Order information">
+        <dl>
+          <dt>Order number</dt><dd id="checkout-order-id"></dd>
+          <dt>Transaction ID</dt><dd id="checkout-transaction"></dd>
+        </dl>
+        <button id="checkout-refresh" type="button">Check order status</button>
+        <p id="checkout-check-feedback" role="status" aria-live="polite"></p>
+      </section>
+      <a href="/refund">Refund policy</a>
+    </section>
+  </main>
+</body>
+</html>

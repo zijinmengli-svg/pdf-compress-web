@@ -99,6 +99,163 @@ test("English login stays available before selecting a file and survives refresh
   } finally { await page.close(); }
 });
 
+test("purchase selects the exact pack and waits for server settlement after the checkout event", async () => {
+  const { page } = await pageWithAuth({ id: "buyer-1", email: "buyer@example.invalid" });
+  try {
+    let selected;
+    let settled = false;
+    await page.addInitScript(() => {
+      window.Paddle = {
+        Environment: { set() {} },
+        Initialize({ eventCallback }) { window.testCheckoutEvent = eventCallback; },
+        Checkout: { open(options) { window.testCheckoutOptions = options; } },
+      };
+    });
+    await page.route("**/api/config", route => route.fulfill({ json: {
+      webRequestToken: "test-token", payment: { enabled: true, checkout: { environment: "sandbox", clientToken: "test_fixture" } },
+    } }));
+    await page.route("**/api/credits/purchase-intent", route => {
+      selected = route.request().postDataJSON().quantity;
+      return route.fulfill({ json: { orderId: "ord_fixture", priceId: "pri_fixture", quantity: selected, customData: { paymentOrderIntent: "test" } } });
+    });
+    await page.route("**/api/credits/purchase-status?*", route => route.fulfill({ json: {
+      orderId: "ord_fixture", status: settled ? "completed" : "pending", quantity: 5, transactionId: settled ? "txn_fixture" : null,
+    } }));
+    assert.equal((await page.goto(base + "/buy")).status(), 200);
+    await page.getByLabel("5 compressions", { exact: true }).check();
+    await page.getByText("Mainland China ¥49.50 · USD base $9.95", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "Buy 5 compressions" }).click();
+    await page.waitForFunction(() => window.testCheckoutOptions);
+    assert.equal(selected, 5);
+    assert.equal(await page.evaluate(() => window.testCheckoutOptions.items[0].quantity), 5);
+    await page.evaluate(() => window.testCheckoutEvent({ name: "checkout.completed" }));
+    await page.getByText("Waiting for payment confirmation", { exact: true }).waitFor();
+    assert.equal(await page.getByText("Payment confirmed", { exact: true }).count(), 0);
+    await page.getByRole("button", { name: "Check order status" }).click();
+    await page.getByText("Checked: payment is still pending.", { exact: true }).waitFor();
+    settled = true;
+    await page.getByRole("button", { name: "Check order status" }).click();
+    await page.getByText("Payment confirmed", { exact: true }).waitFor();
+    await page.reload();
+    await page.getByText("Payment confirmed", { exact: true }).waitFor();
+    await page.getByText("txn_fixture", { exact: true }).waitFor();
+    await page.getByRole("link", { name: "中文" }).click();
+    await page.getByText("支付已确认，次数已到账。", { exact: true }).waitFor();
+    assert.match(page.url(), /\/zh\/buy\?order=ord_fixture$/);
+  } finally { await page.close(); }
+});
+
+test("Chinese buy page stays closed when billing is off and requires email login when enabled", async () => {
+  const { page } = await pageWithAuth();
+  try {
+    await page.goto(base + "/zh/buy");
+    await page.getByText("暂未开放购买。", { exact: true }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "购买 1 次" }).isDisabled(), true);
+    assert.equal(await page.locator('script[src*="paddle.com"]').count(), 0);
+    await page.route("**/api/config", route => route.fulfill({ json: {
+      webRequestToken: "test-token", payment: { enabled: true, checkout: { environment: "sandbox", clientToken: "test_fixture" } },
+    } }));
+    await page.reload();
+    await page.getByLabel("10 次", { exact: true }).check();
+    await page.getByText("中国大陆 ¥99.00 · 美元基础价 $19.90", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "购买 10 次" }).click();
+    await page.getByRole("dialog", { name: "邮箱登录" }).waitFor();
+    assert.equal(await page.locator('script[src*="paddle.com"]').count(), 0);
+  } finally { await page.close(); }
+});
+
+test("payment admin separates unauthorized access, order search and explicitly confirmed refunds", async () => {
+  const { page } = await pageWithAuth();
+  try {
+    await page.goto(base + "/admin-payments");
+    await page.getByText("请先登录管理员后台。", { exact: true }).waitFor();
+    assert.equal(await page.getByRole("table").count(), 0);
+    const orderId = "ord_" + "a".repeat(32);
+    let submitted;
+    let query;
+    await page.route("**/api/admin/payments?*", route => {
+      query = new URL(route.request().url()).searchParams.get("q");
+      return route.fulfill({ json: { refundsEnabled: true, orders: [{
+        orderId, transactionId: "txn_browser_fixture", email: "buyer@example.invalid",
+        quantity: 3, amountMinor: 2970, currency: "CNY",
+        status: submitted ? "refund_pending" : "completed", createdAt: "2026-11-12T00:00:00Z",
+      }] } });
+    });
+    await page.route("**/api/admin/payments/refund", route => {
+      submitted = route.request().postDataJSON();
+      return route.fulfill({ status: 202, json: { status: "refund_pending" } });
+    });
+    await page.getByLabel("邮箱、订单号或交易编号").fill("buyer@example.invalid");
+    await page.getByRole("button", { name: "搜索" }).click();
+    await page.getByRole("button", { name: "申请退款", exact: true }).click();
+    assert.equal(query, "buyer@example.invalid");
+    await page.getByText("txn_browser_fixture", { exact: true }).waitFor();
+    await page.getByLabel("退款原因").selectOption("duplicate");
+    await page.getByRole("button", { name: "确认申请退款" }).click();
+    assert.equal(submitted, undefined);
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: "确认申请退款" }).click();
+    await page.getByText("退款申请已提交，最终状态以支付平台确认为准。", { exact: true }).waitFor();
+    assert.deepEqual(submitted, { orderId, reason: "duplicate", confirm: true });
+    await page.getByRole("button", { name: "关闭", exact: true }).click();
+    await page.getByText("退款处理中", { exact: true }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "申请退款", exact: true }).count(), 0);
+  } finally { await page.close(); }
+});
+
+test("an open homepage automatically refreshes free credits at Beijing 02:00 without changing paid credits", async () => {
+  for (const paid of [0, 3]) {
+    const { page } = await pageWithAuth(paid ? { id: "buyer-1", email: "buyer@example.invalid" } : null);
+    try {
+      const before = new Date("2026-11-14T17:59:55.000Z");
+      const reset = Date.parse("2026-11-14T18:00:00.000Z");
+      await page.clock.install({ time: before });
+      await page.clock.pauseAt(new Date(before.getTime() + 500));
+      await page.route("**/api/config", route => route.fulfill({ json: {
+        webRequestToken: "test-token", payment: { enabled: true, quotaEnabled: true },
+      } }));
+      let calls = 0;
+      await page.route("**/api/credits/balance", async route => {
+        calls++;
+        const browserNow = await page.evaluate(() => Date.now());
+        const free = browserNow >= reset ? 1 : 0;
+        await route.fulfill({ json: { available: free + paid, free, paid,
+          resetsAt: new Date(reset + free * 86_400_000).toISOString(), timezone: "Asia/Shanghai" } });
+      });
+      let navigations = 0;
+      page.on("framenavigated", frame => { if (frame === page.mainFrame()) navigations++; });
+      await page.goto(base + "/zh/");
+      await page.getByText(`剩余 ${paid} 次压缩`, { exact: true }).waitFor();
+      await page.getByRole("button", { name: paid ? "我的账户" : "邮箱登录" }).waitFor();
+      await page.clock.runFor(4000);
+      assert.equal(await page.locator("#credit-balance").textContent(), `剩余 ${paid} 次压缩`);
+      const callsBeforeReset = calls;
+      await page.clock.runFor(2000);
+      await page.getByText(`剩余 ${paid + 1} 次压缩`, { exact: true }).waitFor();
+      assert.ok(calls > callsBeforeReset);
+      assert.equal(navigations, 1, "balance refreshed without reloading the page");
+    } finally { await page.close(); }
+  }
+});
+
+test("account changes notify the purchase and balance UI without exposing email", async () => {
+  const { page } = await pageWithAuth({ id: "account-1", email: "user@example.com" });
+  try {
+    await page.addInitScript(() => {
+      window.accountEvents = [];
+      window.addEventListener("tinypdf:auth-changed", event => window.accountEvents.push(event.detail));
+    });
+    await page.goto(base);
+    await page.getByRole("button", { name: "My account" }).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.accountEvents.at(-1)), { authenticated: true });
+    await page.getByRole("button", { name: "My account" }).click();
+    await page.locator("#email-login-logout").click();
+    await page.locator("#email-logout-confirm").click();
+    await page.getByRole("button", { name: "Sign in with email" }).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.accountEvents.at(-1)), { authenticated: false });
+  } finally { await page.close(); }
+});
+
 test("Chinese login persists across language navigation without touching compression", async () => {
   const { page } = await pageWithAuth();
   try {

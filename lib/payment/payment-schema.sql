@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS payment_orders (
   offer_key text NOT NULL,
   subject_namespace text NOT NULL,
   subject_id text NOT NULL,
+  subject_context jsonb NOT NULL DEFAULT '{}'::jsonb,
   provider text NOT NULL,
   environment text NOT NULL CHECK (environment IN ('sandbox', 'production')),
   price_id text NOT NULL,

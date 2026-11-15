@@ -101,3 +101,17 @@ test("existing prepaid ledger schema can migrate to reversible refund freezes", 
   assert.equal((await pool.query("SELECT status FROM reward_ledger WHERE source_key='purchase:txn_old'")).rows[0].status, "frozen");
   await pool.end();
 });
+
+test("an external partial refund holds the remaining credits without touching other bundles", async () => {
+  const { pool, adapter, ledger } = await setup();
+  const subject = await adapter.resolveSubject("first-device", "guest");
+  const first = { orderId: "ord_partial", transactionId: "txn_partial", subject, units: 3 };
+  const other = { orderId: "ord_other", transactionId: "txn_other", subject, units: 1 };
+  await adapter.grant(first);
+  await adapter.grant(other);
+  await ledger.consumeSuccessfulJob({ walletHash: subject.walletHash, jobId: "job_partial" });
+  assert.equal((await adapter.holdRemaining(first)).frozen, true);
+  assert.equal((await ledger.getBalance({ walletHash: subject.walletHash })).available, 1);
+  assert.equal((await adapter.refundEligibility(other)).eligible, true);
+  await pool.end();
+});

@@ -5,6 +5,20 @@ const { test } = require("node:test");
 const { createWebhookService } = require("../lib/payment/webhook-service");
 const { createPrepaidWebhookWorker } = require("../lib/payment/prepaid-webhook-worker");
 
+test("generic order adjustments reach the core even for partial refunds", async () => {
+  const transaction = { id: "txn_core", customData: { paymentOrderIntent: "signed" } };
+  const adjustment = { id: "adj_core", transactionId: transaction.id, action: "refund", type: "partial" };
+  let handled = 0;
+  const worker = createPrepaidWebhookWorker({
+    repo: { claimWebhookReceipts: async () => [{ event_id: "evt_core", event_type: "adjustment.updated", transaction_id: transaction.id, resource_id: adjustment.id }],
+      completeWebhookReceipt: async () => {}, retryWebhookReceipt: async () => {} },
+    paddle: { getTransaction: async () => transaction, listRefundAdjustments: async () => [adjustment] },
+    orderService: { applyAdjustment: async input => { assert.deepEqual(input, { adjustment, transaction }); handled++; } },
+  });
+  assert.deepEqual(await worker.processPendingWebhooks(), { processed: 1, failed: 0 });
+  assert.equal(handled, 1);
+});
+
 test("only verified webhook payloads are queued, and repeated event IDs stay single", async () => {
   let verificationCalls = 0;
   const accepted = new Set();

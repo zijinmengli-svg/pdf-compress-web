@@ -14,8 +14,7 @@ const { chooseAnalyticsFile } = require("./lib/analytics-path");
 const { createAnalyticsStore } = require("./lib/analytics-store");
 const { createBannerStore } = require("./lib/banner-store");
 const { createBannerRoutes } = require("./lib/banner-routes");
-const { createEmailAuthService } = require("./lib/auth/service");
-const { createEmailSender } = require("./lib/auth/email-sender");
+const { startEmailAuth } = require("./lib/auth/startup");
 const { createEmailAuthRoutes } = require("./lib/auth/routes");
 const { createPrepaidRoutes } = require("./lib/payment/prepaid-routes");
 const { createPaymentAdminRoutes } = require("./lib/payment/admin-routes");
@@ -1649,18 +1648,17 @@ async function main() {
   server.listen(PORT, HOST, () => {
     console.log(`TinyPDF running at http://${HOST}:${PORT}`);
   });
-  if (process.env.DATABASE_URL && process.env.RESEND_API_KEY && process.env.AUTH_FROM_EMAIL && process.env.WEB_SESSION_SECRET) {
+  if (process.env.DATABASE_URL && process.env.WEB_SESSION_SECRET) {
     const { Pool } = require("pg");
     const pool = new Pool({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 5000 });
     try {
-      const service = createEmailAuthService({
+      const service = await startEmailAuth({
         pool,
         secret: process.env.WEB_SESSION_SECRET,
-        sendCode: createEmailSender({ apiKey: process.env.RESEND_API_KEY, from: process.env.AUTH_FROM_EMAIL }),
+        apiKey: process.env.RESEND_API_KEY, from: process.env.AUTH_FROM_EMAIL,
       });
-      await service.ready();
       emailAuthService = service;
-      console.log("TinyPDF email login ready");
+      console.log(service.deliveryAvailable ? "TinyPDF email login ready" : "TinyPDF account database ready; email delivery not configured");
       try {
         // Reconcile existing orders independently of the new-purchase switch.
         // Keep purchases closed until the job/UI release gate is completed.

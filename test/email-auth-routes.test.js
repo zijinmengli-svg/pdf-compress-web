@@ -26,8 +26,18 @@ async function setup() {
     const handled = await route(req, res, new URL(path, "https://tinypdf.cn"));
     return { handled, ...res };
   }
-  return { pool, sent, request, disable: () => { active = null; } };
+  return { pool, sent, request, disableDelivery: () => { service.deliveryAvailable = false; }, disable: () => { active = null; } };
 }
+
+test("missing mail delivery blocks new codes but preserves database session and logout routes", async () => {
+  const ctx = await setup();
+  ctx.disableDelivery();
+  assert.deepEqual((await ctx.request("/api/auth/me")).payload, { available: false, authenticated: false });
+  assert.equal((await ctx.request("/api/auth/request-code", "POST", { email: "test@example.invalid" })).status, 503);
+  assert.equal(ctx.sent.length, 0);
+  assert.equal((await ctx.request("/api/auth/logout", "POST")).status, 200);
+  await ctx.pool.end();
+});
 
 test("auth endpoints reject a missing website request token and expose availability", async () => {
   const ctx = await setup();

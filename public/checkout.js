@@ -127,7 +127,7 @@
           overlay = false;
           say(copy("无法打开结账，请重试。", "Could not open checkout. Try again."));
           render();
-        } else if (event.name === "checkout.payment-error" && overlay) {
+        } else if (["checkout.payment.error", "checkout.payment.failed"].includes(event.name) && overlay) {
           say(copy("支付未成功，请在结账页重试。", "Payment failed. Please retry in checkout."));
         }
       } });

@@ -111,6 +111,47 @@ async function main() {
     assert.equal((await afterRestart.balance(completedGuest)).free, 0, "never refund a successful job");
     await assert.rejects(afterRestart.finish(abandonedFree, true));
     await assert.rejects(afterRestart.finish(abandonedPaid, true));
+    // Exercise real fulfillment and refund eligibility, not an adapter stub.
+    const { createOrderService } = require("../lib/payment/order-service");
+    const { createCatalog } = require("../lib/payment/catalog");
+    const { createTinyPdfAdapter } = require("../lib/payment/tinypdf-adapter");
+    const refundLedger = createPrepaidLedger({ pool, now });
+    const accountId = crypto.randomUUID();
+    const refundWalletHash = `refund-${accountId}`;
+    await pool.query("INSERT INTO auth_accounts VALUES ($1,$2,now(),now())", [accountId, `${accountId}@example.invalid`]);
+    await refundLedger.ensureWallet({ walletHash: refundWalletHash });
+    await pool.query("INSERT INTO account_wallets(account_id,wallet_hash) VALUES ($1,$2)", [accountId, refundWalletHash]);
+    let remoteTransaction, providerRefunds = 0;
+    const orders = createOrderService({ pool, now, intentSecret: "isolated-refund-test",
+      catalog: createCatalog({ environment: "sandbox", products: [{ key: "tinypdf", enabled: true, offers: [{
+        key: "credits", enabled: true, quantities: [1, 3, 5, 10], unitsPerQuantity: 1,
+        paddle: { sandbox: { productId: "pro_local", priceId: "pri_local" } },
+      }] }] }),
+      adapters: new Map([["tinypdf", createTinyPdfAdapter({ pool, authService: {}, ledger: refundLedger,
+        identityHashSecret: "isolated-wallet-test" })]]),
+      paddle: { getTransaction: async () => remoteTransaction, listRefundAdjustments: async () => [],
+        requestFullRefund: async () => { providerRefunds++; throw new Error("Must not submit a used or in-flight refund"); } },
+    });
+    const subject = { namespace: "tinypdf", id: accountId, walletHash: refundWalletHash };
+    const prepared = await orders.prepareCheckout({ productKey: "tinypdf", offerKey: "credits", quantity: 3, subject });
+    remoteTransaction = { id: "txn_partial_refund", status: "completed", customData: prepared.customData,
+      items: [{ quantity: 3, price: { id: "pri_local", productId: "pro_local" } }],
+      details: { totals: { total: "2970", currencyCode: "CNY" } } };
+    await orders.settleCompleted(remoteTransaction);
+    const refund = () => orders.requestRefund({ orderId: prepared.orderId, reason: "other", adminActor: "local-acceptance" });
+    await refundLedger.reserveJob({ walletHash: refundWalletHash, jobId: "refund-in-flight", purchasedOnly: true });
+    await assert.rejects(refund(), /manual refund review/);
+    await refundLedger.finishJob({ walletHash: refundWalletHash, jobId: "refund-in-flight", success: false });
+    assert.equal((await refundLedger.getBalance({ walletHash: refundWalletHash })).available, 3);
+    await refundLedger.reserveJob({ walletHash: refundWalletHash, jobId: "partly-used", purchasedOnly: true });
+    await refundLedger.finishJob({ walletHash: refundWalletHash, jobId: "partly-used", success: true });
+    const refused = await Promise.allSettled(Array.from({ length: 100 }, refund));
+    assert.equal(refused.filter(row => row.status === "rejected").length, 100);
+    assert.equal(providerRefunds, 0);
+    assert.equal((await refundLedger.getBalance({ walletHash: refundWalletHash })).available, 2);
+    assert.equal((await orders.getOrder({ orderId: prepared.orderId, subject })).status, "completed");
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM payment_refund_requests WHERE order_id=$1", [prepared.orderId])).rows[0].n, 0);
+    console.log("PASS: real PostgreSQL in-flight/partly-used refund guards; 100 rejected attempts, no provider refund, 2 credits preserved");
     console.log(`PASS: 100-way bursts, reconnect, free-to-paid transition and Beijing 02:00 reset; ${Math.round(performance.now() - started)} ms`);
   } finally {
     if (pool) await pool.end();

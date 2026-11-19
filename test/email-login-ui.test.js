@@ -145,6 +145,52 @@ test("purchase selects the exact pack and waits for server settlement after the 
   } finally { await page.close(); }
 });
 
+test("documented payment failures keep checkout retryable; closing permits a new purchase without confirming payment", async () => {
+  for (const locale of ["en", "zh"]) {
+    const { page } = await pageWithAuth({ id: "buyer-1", email: "buyer@example.invalid" });
+    try {
+      let orders = 0;
+      await page.addInitScript(() => {
+        window.Paddle = {
+          Environment: { set() {} },
+          Initialize({ eventCallback }) { window.testCheckoutEvent = eventCallback; },
+          Checkout: { open() {} },
+        };
+      });
+      await page.route("**/api/config", route => route.fulfill({ json: {
+        webRequestToken: "test-token", payment: { enabled: true, checkout: { environment: "sandbox", clientToken: "test_fixture" } },
+      } }));
+      await page.route("**/api/credits/purchase-intent", route => {
+        orders++;
+        return route.fulfill({ json: { orderId: `ord_retry_${orders}`, priceId: "pri_fixture",
+          quantity: route.request().postDataJSON().quantity, customData: { paymentOrderIntent: "test" } } });
+      });
+      await page.route("**/api/credits/purchase-status?*", route => route.fulfill({ json: {
+        orderId: "ord_retry_1", status: "pending", quantity: 1, transactionId: null,
+      } }));
+      await page.goto(base + (locale === "zh" ? "/zh/buy" : "/buy"));
+      const buy = page.locator("#checkout-buy");
+      await buy.click();
+      await page.waitForFunction(() => new URL(location.href).searchParams.get("order") === "ord_retry_1");
+      // Paddle documents dotted event names, not checkout.payment-error.
+      for (const name of ["checkout.payment.failed", "checkout.payment.error"]) {
+        await page.evaluate(name => window.testCheckoutEvent({ name }), name);
+        assert.equal(await page.locator("#checkout-message").textContent(), locale === "zh"
+          ? "支付未成功，请在结账页重试。" : "Payment failed. Please retry in checkout.");
+        assert.equal(await buy.isDisabled(), true, "do not open a second checkout over the failed attempt");
+      }
+      await page.evaluate(() => window.testCheckoutEvent({ name: "checkout.closed" }));
+      assert.equal(await buy.isEnabled(), true);
+      assert.equal(await page.getByText("Payment confirmed", { exact: true }).count(), 0);
+      await page.locator("#checkout-refresh").click();
+      await page.getByText(locale === "zh" ? "已查询：尚未确认付款。" : "Checked: payment is still pending.", { exact: true }).waitFor();
+      await buy.click();
+      await page.waitForFunction(() => new URL(location.href).searchParams.get("order") === "ord_retry_2");
+      assert.equal(orders, 2);
+    } finally { await page.close(); }
+  }
+});
+
 test("Chinese buy page stays closed when billing is off and requires email login when enabled", async () => {
   const { page } = await pageWithAuth();
   try {

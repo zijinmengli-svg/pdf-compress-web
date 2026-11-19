@@ -104,6 +104,24 @@ test("external full refund and rejected refund transition without granting twice
   await pool.end();
 });
 
+test("failed, canceled and unfinished payments leave the order unpaid and cannot be refunded", async () => {
+  const { pool, service, remote, transactions, refunds } = await setup();
+  try {
+    for (const status of ["draft", "ready", "billed", "paid", "past_due", "canceled", "failed"]) {
+      const prepared = await service.prepareCheckout({ productKey: "tinypdf", offerKey: "credit", quantity: 3, subject: alice });
+      const transaction = remote({ prepared, id: `txn_${status}`, quantity: 3, status });
+      transactions.set(transaction.id, transaction);
+      await assert.rejects(service.settleCompleted(transaction), /incomplete/);
+      const order = await service.getOrder({ orderId: prepared.orderId, subject: alice });
+      assert.equal(order.status, "pending");
+      assert.equal(order.transactionId, null);
+      await assert.rejects(service.requestRefund({ orderId: prepared.orderId, reason: "other", adminActor: "admin-1" }), /not available/);
+    }
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM test_grants")).rows[0].n, 0);
+    assert.equal(refunds.length, 0);
+  } finally { await pool.end(); }
+});
+
 test("administrator refund freezes an unused order; refusal restores it", async () => {
   const { pool, service, remote, transactions, refunds } = await setup();
   const prepared = await service.prepareCheckout({ productKey: "tinypdf", offerKey: "credit", quantity: 1, subject: alice });

@@ -66,3 +66,40 @@ External acceptance blocker: CUA getState timed out during this continuation; Pa
 - Probed two temporary HTTPS tunnel options using only a disposable loopback health receiver. Cloudflare did not reach that receiver (DNS timeout observed); the ngrok endpoint also did not return the receiver's unique health value. Neither test exposed the app, database, or admin. Both temporary tunnel processes were stopped.
 - Paddle sandbox confirmed the existing key has `notification_setting.write` but not `checkout_settings.write`. The sandbox default payment link remains unset. Do not register an unverified or ephemeral hostname as the account's default.
 - For the next sandbox run, verify an isolated HTTPS preview from outside the local machine before changing Paddle. It must serve the checkout page and deliver signed notifications to an isolated database, without exposing the admin or test-session bootstrap publicly. Keep the prior production-directed sandbox destination inactive. Set the default payment link in the sandbox dashboard (or with a separately scoped sandbox credential), then run the read-only isolation check before creating a test transaction.
+
+## Render sandbox wiring
+
+- Verified that Paddle's sandbox default payment link matches `https://tinypdf-payment-qa.onrender.com/buy` after the user's dashboard change.
+- Created a separate sandbox notification destination `ntfset_01m7qqj9xfr52h0x79877v9g6z` on that preview's webhook, for transaction.completed and adjustment created/updated events, with `active=false` until the receiver is ready. The old production-directed destination remains disabled.
+- Stored the sandbox credentials and destination-specific signature secret directly in the QA Render service, together with independent session and identity secrets. Existing environment variables were merged, not replaced; the database value was neither read nor changed. Purchasing and admin refunds remain disabled.
+- The preview's deployed auth still reports unavailable. Database reachability from the app is not yet proven by this change, and real sandbox payment/refund acceptance has not started.
+
+## Verified Render database and receiver startup
+
+- Deployed `5ac72c89ae608d759b522a2d84d393c17c8a2266` only to the QA branch/service. Account database initialization no longer depends on the email delivery configuration; requesting a new code remains unavailable without a sender.
+- Render logs confirm account database initialization and payment migrations/reconciliation are ready. Public config reports payment `disabled`, rather than `unavailable`. This proves the configured test database is reachable from the app.
+- Verified the QA webhook rejects an invalid signature with HTTP 401. Then activated only the dedicated QA sandbox notification destination after verifying the checkout URL and absence of any other active destination. No payment/refund transaction was created; the production-directed destination remains inactive.
+- New startup and route regressions passed (6 cases), payment suite 60/60, full site regression including 60 Node cases passed. Email delivery and actual hosted sandbox checkout still require acceptance; no claim of full payment readiness.
+
+## Hosted sandbox checkout enabled
+
+- Deployed `2f460dee8dc9e6a63846198792ee0f802bd87564` only to QA. The temporary gate checks the exact Render service ID, QA HTTPS origin, isolated database hostname, notification destination, sandbox API/client credentials and explicit test switch. Production does not satisfy the gate.
+- QA config now reports checkout enabled, quota enabled, sandbox environment. Full site and payment regressions passed before deployment. Email sender startup was verified and the user reports test-site login succeeded.
+- Browser control still times out; actual hosted checkout completion has not been performed. User handoff for a sandbox test-card purchase is necessary to generate a real transaction for reconciliation/refund verification. No successful payment or provider refund is claimed.
+
+## Actual Paddle sandbox transaction and refund
+
+- User completed a sandbox checkout. Paddle transaction `txn_01m7sb6qxcv6bb46c05exc6cqs` is completed, 1 unit, USD 199 minor. Its transaction.completed notification is delivered.
+- Authenticated QA admin lookup confirmed website order `ord_574e1237e13c4601a5fb6dda19135343` completed, matching transaction, quantity, currency and amount. This is persisted settlement, not just a browser success event.
+- Submitted that unused order through the website admin refund API: HTTP 202, refund_pending; adjustment `adj_01m7sbjw9q6vyba02ntyrapswh`, type full. The adjustment.created notification was delivered. Subsequent polling confirmed Paddle approved it and the website order reconciled to refunded.
+- This verifies one successful hosted sandbox card checkout and one unused full refund. It does not establish that Alipay is available, nor complete the hosted declined/canceled/partly-used tests. No live financial transaction occurred. User-facing account balance display after the actual refund remains to be visually checked.
+
+## 2026-11-19 abnormal-path continuation
+
+- Real browser query after refresh showed the actual order as refunded and retained login. An earlier manual status query timed out; a reload completed the query. No claim that the actual paid balance was visually verified.
+- Reproduced a missing payment-failure message: the frontend listened for `checkout.payment-error`, but Paddle emits `checkout.payment.error` and `checkout.payment.failed`. A new bilingual Chromium regression failed before the fix and passed after it. Failure leaves checkout open for retry; closing enables another purchase, while querying the unpaid order does not show success.
+- Added order-core tests rejecting draft/ready/billed/paid/past_due/canceled/failed settlement and refund without granting credits. Payment suite: 64/64. Full npm test exited 0 with 61 Node cases plus the preceding legacy suites.
+- Re-ran a fresh disposable loopback PostgreSQL cluster: 100-way duplicate grants/reservations/recovery, free-to-paid transition, Beijing 02:00, purchased balance retention, server restart, all 1/3/5/10 local bundles, real Ghostscript PDF download and integrated Chromium flow passed. Provider was a local fixture, not Paddle.
+- Added and ran real PostgreSQL adapter checks: in-flight reservations block refund; a failed job releases the reservation; after one of three purchased units is spent, 100 refund attempts are refused, no provider refund is called, 2 credits remain and the order stays completed.
+- Hosted 3-unit checkout revealed a platform blocker: sandbox price `pri_01kyxwwt8ewrsnsgcvbkddthh2` has quantity minimum=1, maximum=1. The Paddle overlay showed a loading error. Sandbox SDK update was denied for lack of price.write, and browser dashboard fallback timed out. User was asked to set only sandbox quantity minimum=1, maximum=10, preserving prices. No credential permissions were expanded and no live settings were changed.
+- Added a read-only preflight to check active product/price binding, one-time pricing, exact USD 199 / CN CNY 990 minor prices, and support for all 1/3/5/10 quantities. Regression passes; actual preflight now correctly BLOCKS the max=1 sandbox price. Hosted multi-pack/declined/canceled acceptance remains incomplete until platform configuration is fixed.

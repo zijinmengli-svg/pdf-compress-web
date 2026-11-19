@@ -21,6 +21,7 @@ const { createPaymentAdminRoutes } = require("./lib/payment/admin-routes");
 const { createPrepaidWebhookRoute } = require("./lib/payment/prepaid-webhook-route");
 const { loadPaymentConfig } = require("./lib/payment/config");
 const { startPaymentRuntime } = require("./lib/payment/startup");
+const { allowHostedSandbox } = require("./lib/payment/preview-gate");
 const { validIndexNowKey } = require("./lib/indexnow");
 const { compressionTimeoutMs } = require("./lib/compression-timeout");
 const { gsTimeoutMsForBytes } = require("./lib/gs-timeout");
@@ -1662,7 +1663,9 @@ async function main() {
       try {
         // Reconcile existing orders independently of the new-purchase switch.
         // Keep purchases closed until the job/UI release gate is completed.
-        const paymentConfig = { ...loadPaymentConfig(), enabled: false };
+        const loadedPaymentConfig = loadPaymentConfig();
+        const hostedSandbox = allowHostedSandbox(loadedPaymentConfig, process.env);
+        const paymentConfig = { ...loadedPaymentConfig, enabled: hostedSandbox };
         const localQuotaRequested = process.env.TINYPDF_LOCAL_QUOTA_TEST === "true" &&
           HOST === "127.0.0.1" && paymentConfig.environment === "sandbox";
         let database = null;
@@ -1671,12 +1674,12 @@ async function main() {
         }
         const localQuotaTest = Boolean(database && database.hostname === "127.0.0.1" &&
           /^\/tinypdf_test(?:_[a-z0-9_]+)?$/.test(database.pathname) && !database.search);
-        if (localQuotaTest) paymentConfig.quotaLeaseMs = COMPRESSION_TIMEOUT_MS + 120_000;
+        if (localQuotaTest || hostedSandbox) paymentConfig.quotaLeaseMs = COMPRESSION_TIMEOUT_MS + 120_000;
         prepaidRuntime = await startPaymentRuntime({ config: paymentConfig, pool, authService: service,
           onError: code => console.error(code) });
         if (prepaidRuntime) {
-          prepaidRuntime.testQuotaEnabled = localQuotaTest;
-          console.log("TinyPDF payment reconciliation ready; new purchases disabled");
+          prepaidRuntime.testQuotaEnabled = localQuotaTest || hostedSandbox;
+          console.log(hostedSandbox ? "TinyPDF isolated sandbox checkout ready" : "TinyPDF payment reconciliation ready; new purchases disabled");
         }
       } catch {
         console.error("TinyPDF payment initialization unavailable; email login remains enabled");

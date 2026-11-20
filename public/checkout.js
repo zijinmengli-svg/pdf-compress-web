@@ -25,6 +25,28 @@
   let remainingChecks = 0;
   let pollTimer;
   let checking = false;
+  let returnTimer;
+  let returnAt = 0;
+
+  function cancelReturn() {
+    clearTimeout(returnTimer);
+    returnAt = 0;
+  }
+  function returnHomeAfterPayment() {
+    if (!returnAt) {
+      returnAt = Date.now() + 5000;
+      window.Paddle?.Checkout.close?.();
+    }
+    clearTimeout(returnTimer);
+    const tick = () => {
+      if (!authenticated || !returnAt) return;
+      const seconds = Math.max(0, Math.ceil((returnAt - Date.now()) / 1000));
+      feedback.textContent = copy(`${seconds}秒后自动返回首页`, `Returning to home in ${seconds} seconds`);
+      if (!seconds) { location.replace(zh ? "/zh/" : "/"); return; }
+      returnTimer = setTimeout(tick, Math.min(1000, returnAt - Date.now()));
+    };
+    tick();
+  }
 
   const say = value => { message.textContent = value; };
   const quantity = () => Number(packs.querySelector("input:checked").value);
@@ -38,8 +60,8 @@
       `Mainland China ¥${total("CNY", 990)} · USD base $${total("USD", 199)}`
     );
     buy.textContent = copy(`购买 ${n} 次`, `Buy ${n} compression${n === 1 ? "" : "s"}`);
-    buy.disabled = !config?.payment?.enabled || opening || overlay || waiting;
-    packs.disabled = opening || overlay || waiting;
+    buy.disabled = !config?.payment?.enabled || opening || overlay || waiting || Boolean(returnAt);
+    packs.disabled = opening || overlay || waiting || Boolean(returnAt);
     orderPanel.hidden = !authenticated || !orderId;
     byId("checkout-order-id").textContent = authenticated ? orderId : "";
     refresh.disabled = checking;
@@ -86,8 +108,11 @@
         : copy("已更新订单状态。", "Order status refreshed.");
       if (order.status === "pending" && waiting) scheduleCheck();
       else waiting = false;
+      if (order.status === "completed") returnHomeAfterPayment();
+      else cancelReturn();
     } catch (error) {
       if (requestRevision !== revision) return;
+      cancelReturn();
       say(copy("暂时无法查询该订单。请确认已登录购买时使用的邮箱。", "Cannot check this order. Sign in with the email used to buy it."));
       if (manual) feedback.textContent = copy("查询失败，请稍后重试。", "Status check failed. Try again.");
       if (waiting && error.status !== 401 && error.status !== 404) scheduleCheck();
@@ -111,6 +136,7 @@
       const { environment, clientToken } = config.payment.checkout;
       if (environment === "sandbox") sdk.Environment.set("sandbox");
       sdk.Initialize({ token: clientToken, eventCallback: event => {
+        if (returnAt) return;
         if (!authenticated || !orderId || (!overlay && !waiting)) return;
         if (event.name === "checkout.completed") {
           overlay = false;
@@ -141,6 +167,7 @@
     authenticated = Boolean(event.detail?.authenticated);
     if (authenticated && orderId) check();
     else if (!authenticated) {
+      cancelReturn();
       ++revision;
       checking = false;
       clearTimeout(pollTimer);

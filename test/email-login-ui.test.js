@@ -145,6 +145,33 @@ test("purchase selects the exact pack and waits for server settlement after the 
   } finally { await page.close(); }
 });
 
+test("only server-confirmed payment returns to the localized homepage after five seconds, never browser history", async () => {
+  for (const zh of [false, true]) {
+    const { page } = await pageWithAuth({ id: "buyer-1", email: "buyer@example.invalid" });
+    try {
+      await page.clock.install();
+      await page.clock.pauseAt(new Date(Date.now() + 1000));
+      let status = "pending";
+      await page.route("**/api/credits/purchase-status?*", route => route.fulfill({ json: {
+        orderId: "ord_return", status, quantity: 5, transactionId: status === "completed" ? "txn_return" : null,
+      } }));
+      await page.goto(base + "/contact");
+      const buyUrl = base + (zh ? "/zh/buy" : "/buy") + "?order=ord_return";
+      await page.goto(buyUrl);
+      await page.getByText(zh ? "正在等待支付确认" : "Waiting for payment confirmation", { exact: true }).waitFor();
+      await page.clock.runFor(6000);
+      assert.equal(page.url(), buyUrl, "pending payment must not redirect");
+      status = "completed";
+      await page.locator("#checkout-refresh").click();
+      await page.getByText(zh ? "5秒后自动返回首页" : "Returning to home in 5 seconds", { exact: true }).waitFor({ timeout: 2000 });
+      await page.clock.runFor(4000);
+      assert.equal(page.url(), buyUrl, "do not leave before five seconds");
+      await page.clock.runFor(1000);
+      await page.waitForURL(base + (zh ? "/zh/" : "/"));
+    } finally { await page.close(); }
+  }
+});
+
 test("documented payment failures keep checkout retryable; closing permits a new purchase without confirming payment", async () => {
   for (const locale of ["en", "zh"]) {
     const { page } = await pageWithAuth({ id: "buyer-1", email: "buyer@example.invalid" });

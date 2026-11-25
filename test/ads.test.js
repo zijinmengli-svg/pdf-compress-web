@@ -36,15 +36,15 @@ async function startServer(port, env) {
   // Extensionless legal routes stay reachable for AdSense review.
   const t1 = await get(3711, "/terms");
   check("extensionless /terms → 200", t1.status === 200, "status=" + t1.status);
-  check("/terms serves English terms content", t1.body.includes("Terms of Service") && t1.body.includes("free to use"));
+  check("/terms serves daily allowance and prepaid terms", t1.body.includes("Terms of Service") && t1.body.includes("02:00") && t1.body.includes("1, 3, 5, or 10"));
   const p1 = await get(3711, "/privacy");
   check("extensionless /privacy → 200", p1.status === 200, "status=" + p1.status);
   const refund1 = await get(3711, "/refund");
   check("extensionless /refund → 200", refund1.status === 200, "status=" + refund1.status);
-  check("refund page explains paid-result support", refund1.body.includes("Refund Policy") && refund1.body.includes("paid result"));
+  check("refund page explains unused and partially used packs", refund1.body.includes("Refund Policy") && refund1.body.includes("entirely unused") && refund1.body.includes("partially used") && refund1.body.includes("original payment method"));
   const pricing1 = await get(3711, "/pricing");
   check("extensionless /pricing → 200", pricing1.status === 200, "status=" + pricing1.status);
-  check("pricing page distinguishes current free access from planned paid access", pricing1.body.includes("currently free") && pricing1.body.includes("¥9.90") && pricing1.body.includes("$1.99"));
+  check("pricing page explains daily free access and prepaid prices", pricing1.body.includes("02:00") && pricing1.body.includes("1, 3, 5, or 10") && pricing1.body.includes("¥9.90") && pricing1.body.includes("$1.99") && !pricing1.body.includes("currently free"));
   check("home footer links to pricing and refunds", home1.body.includes('href="/pricing"') && home1.body.includes('href="/refund"'));
   s1.kill("SIGKILL");
 
